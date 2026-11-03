@@ -13,7 +13,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo Compiling prec64.py into single-file binary with bundled assets and league profiles...
-python -m PyInstaller --onefile --name prec64 --icon="assets/supreme_soviet.ico" --add-data "leagues;leagues" --add-data "assets;assets" --clean --noconfirm prec64.py
+python -m PyInstaller --onefile --noupx --version-file="version_info.txt" --name prec64 --icon="assets/supreme_soviet.ico" --add-data "leagues;leagues" --add-data "assets;assets" --clean --noconfirm prec64.py
 
 if %errorlevel% equ 0 (
     echo.

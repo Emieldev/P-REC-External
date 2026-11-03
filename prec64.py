@@ -534,39 +534,31 @@ def detect_tf2_directory():
 
 
 # ====================================================================
-# Auto-Start Configuration (Windows Startup / Linux Autostart)
+# Auto-Start Configuration (Windows Registry / Linux Autostart)
 # ====================================================================
 
-def get_startup_paths():
-    """Returns platform-specific autostart paths."""
-    if sys.platform == "win32":
-        appdata = os.environ.get("APPDATA", "")
-        if not appdata:
-            return None, None, None
-        startup_dir = Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-        vbs_path = startup_dir / "prec64_autostart.vbs"
-        bat_path = startup_dir / "prec64.bat"
-        return startup_dir, vbs_path, bat_path
-    else:
-        autostart_dir = Path.home() / ".config" / "autostart"
-        desktop_file = autostart_dir / "prec64.desktop"
-        return autostart_dir, desktop_file, None
+REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+REG_APP_NAME = "PRECExternal"
 
 
 def is_startup_enabled() -> bool:
     """Checks whether P-REC External is set to start automatically on system boot/login."""
     if sys.platform == "win32":
-        startup_dir, vbs_path, bat_path = get_startup_paths()
-        if not startup_dir:
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_READ) as key:
+                val, _ = winreg.QueryValueEx(key, REG_APP_NAME)
+                return bool(val)
+        except Exception:
             return False
-        return bool((vbs_path and vbs_path.exists()) or (bat_path and bat_path.exists()))
     else:
-        autostart_dir, desktop_file, _ = get_startup_paths()
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "prec64.desktop"
         return bool(desktop_file and desktop_file.exists())
 
 
 def set_startup(enable: bool, exe_path: Path = None) -> bool:
-    """Enables or disables autostart on system boot/login."""
+    """Enables or disables autostart via Windows Registry or Linux desktop autostart."""
     if not exe_path:
         if getattr(sys, 'frozen', False):
             exe_path = Path(sys.executable).resolve()
@@ -574,33 +566,34 @@ def set_startup(enable: bool, exe_path: Path = None) -> bool:
             exe_path = Path(__file__).resolve()
 
     if sys.platform == "win32":
-        startup_dir, vbs_path, bat_path = get_startup_paths()
-        if not startup_dir or not startup_dir.exists():
-            return False
-        if enable:
-            if bat_path and bat_path.exists():
-                try:
-                    bat_path.unlink()
-                except Exception:
-                    pass
-            # Launch with window style 0 (SW_HIDE) so zero cmd flashes occur on login
-            vbs_content = f'CreateObject("Wscript.Shell").Run """{exe_path}""", 0, False\n'
-            try:
-                with open(vbs_path, "w", encoding="utf-8") as f:
-                    f.write(vbs_content)
-                return True
-            except Exception:
-                return False
-        else:
-            for p in (vbs_path, bat_path):
-                if p and p.exists():
+        # Clean any legacy vbs or bat in Startup folder to avoid antivirus false alarms
+        try:
+            appdata = os.environ.get("APPDATA", "")
+            if appdata:
+                startup_dir = Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+                for legacy in (startup_dir / "prec64_autostart.vbs", startup_dir / "prec64.bat"):
+                    if legacy.exists():
+                        legacy.unlink()
+        except Exception:
+            pass
+
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_ALL_ACCESS) as key:
+                if enable:
+                    winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
+                else:
                     try:
-                        p.unlink()
-                    except Exception:
+                        winreg.DeleteValue(key, REG_APP_NAME)
+                    except FileNotFoundError:
                         pass
             return True
+        except Exception as e:
+            print(f"[STARTUP] Registry update error: {e}", flush=True)
+            return False
     else:
-        autostart_dir, desktop_file, _ = get_startup_paths()
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "prec64.desktop"
         if enable:
             try:
                 autostart_dir.mkdir(parents=True, exist_ok=True)
