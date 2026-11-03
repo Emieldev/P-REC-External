@@ -26,7 +26,6 @@
 * **100% VAC-Safe:** Connects to TF2 via official engine sockets. Zero DLL injection or memory tampering.
 * **Zero Warmup Bloat:** Listens to tournament countdown pulses and triggers recording strictly when the match goes live (no more 45-minute warmup demo files from `ds_enable 3`!).
 * **🛡️ Windows System Tray (Hidden Pictograms):** Lives quietly in the notification area under Hidden Pictograms with the TF2 **Supreme Soviet** icon. Right-click to access Settings, Custom folder, toggle console visibility, or Close cleanly!
-* **Zero Distracting Screen Pop-ups:** Zero desktop toast pop-ups, zero intrusive overlays, zero focus stealing. Clean alerts via team chat and audio cues.
 * **⚡ Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
 * **🔍 DemoMan Auto-Detection:** Automatically discovers local [DemoMan](https://github.com/DemomanApp/DemoMan) installations, extracts its active RCON password and pre-fills your TF2 `/tf` path!
 * **Multi-League Strict Rule Compliance:**
