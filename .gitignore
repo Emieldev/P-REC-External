@@ -1,0 +1,10 @@
+# PyInstaller & Build artifacts
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# Local runtime logs
+*.log
+

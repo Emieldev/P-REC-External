@@ -1,0 +1,70 @@
+name: Build Standalone Releases
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+      - name: Build Executable
+        run: pyinstaller --onefile --name prec64 --add-data "leagues;leagues" --clean --noconfirm prec64.py
+      - name: Upload Windows Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: prec64-windows
+          path: dist/prec64.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+      - name: Build Executable
+        run: pyinstaller --onefile --name prec64 --add-data "leagues:leagues" --clean --noconfirm prec64.py
+      - name: Upload Linux Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: prec64-linux
+          path: dist/prec64
+
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prec64-windows
+          path: release-assets
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prec64-linux
+          path: release-assets
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/prec64.exe
+            release-assets/prec64
+            PREC_Settings.cfg
+          generate_release_notes: true
+

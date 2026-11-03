@@ -1,0 +1,20 @@
+{
+  "id": "rgl",
+  "name": "Recreational Gamers League (RGL.gg)",
+  "rules_url": "https://docs.rgl.gg/rules/global/1008/?h=pov+demos#1008_5-pov-and-stv-demos",
+  "config_repo": "https://github.com/RGLgg/server-resources-updater",
+  "prefix": "rgl",
+  "ds_enable": 0,
+  "ds_autodelete": 0,
+  "ds_screens": 1,
+  "mandatory_status_screenshot": false,
+  "server_config_patterns": [
+    "rgl_(6s|hl|7s|pt|cast)",
+    "RGL (6s|HL|7s|Prolander).*Config Executed"
+  ],
+  "chat_triggers": [
+    "Both teams are ready",
+    "Match is LIVE",
+    "First to \\d+ wins the match"
+  ]
+}
