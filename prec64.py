@@ -636,6 +636,18 @@ def get_app_dir():
 
 def detect_tf2_directory():
     """Attempts to find the tf/ directory on Windows and Linux, checking DemoMan config first."""
+    # 0. Check if running directly inside tf/custom/ or tf/
+    try:
+        app_dir = get_app_dir()
+        curr = app_dir
+        for _ in range(4):
+            if curr and curr.name.lower() == "tf" and curr.exists():
+                return curr
+            if curr:
+                curr = curr.parent
+    except Exception:
+        pass
+
     # 1. Prioritize path from DemoMan if present
     try:
         demoman = detect_demoman_config()
@@ -765,6 +777,28 @@ Comment=TF2 Automated Match Recorder
                 except Exception:
                     pass
             return True
+
+
+# ====================================================================
+# Single-Instance Lock (Prevent Dual Process Conflicts)
+# ====================================================================
+
+_single_instance_mutex = None
+
+
+def acquire_single_instance_lock():
+    global _single_instance_mutex
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            ERROR_ALREADY_EXISTS = 183
+            _single_instance_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\PREC64_SingleInstance_Mutex")
+            if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+                print(f"[{APP_NAME}] Another instance of {APP_NAME} is already running in the background/system tray. Exiting duplicate.", flush=True)
+                sys.exit(0)
+        except Exception:
+            pass
 
 
 # ====================================================================
@@ -2444,7 +2478,11 @@ class PrecEngine:
         self.is_recording = False
         self.is_tournament = False
         self.is_scrim = False
-        self.last_record_toggle = 0.0
+        self.last_record_start = 0.0
+        self.last_record_stop = 0.0
+        self.last_connected_server = ""
+        self.last_connected_map = ""
+        self.was_in_match = False
         self.client_mode = None
         self.sender = None
         self.tailer = None
@@ -2602,11 +2640,10 @@ class PrecEngine:
 
     def query_tournament_teams(self):
         """Queries TF2 for active tournament red and blu team names."""
-        if not self.sender or not hasattr(self.sender, "_send_raw"):
+        if not self.sender:
             return
         try:
-            self.sender._send_raw(self.sender.SERVERDATA_EXECCOMMAND, "mp_tournament_redteamname")
-            r_id, r_type, body_red = self.sender._read_raw()
+            body_red = self.send_cmd_response("mp_tournament_redteamname")
             m_red = re.search(r'=\s*"([^"]*)"', body_red)
             if m_red and m_red.group(1).strip():
                 raw = m_red.group(1).strip()
@@ -2618,8 +2655,7 @@ class PrecEngine:
             pass
 
         try:
-            self.sender._send_raw(self.sender.SERVERDATA_EXECCOMMAND, "mp_tournament_blueteamname")
-            b_id, b_type, body_blu = self.sender._read_raw()
+            body_blu = self.send_cmd_response("mp_tournament_blueteamname")
             m_blu = re.search(r'=\s*"([^"]*)"', body_blu)
             if m_blu and m_blu.group(1).strip():
                 raw = m_blu.group(1).strip()
@@ -2755,11 +2791,17 @@ class PrecEngine:
 
     def start_recording(self, reason="Match Live"):
         now = time.time()
-        if self.is_recording or (now - self.last_record_toggle < 3.0):
+        if self.is_recording or (now - self.last_record_start < 1.5):
             return
 
-        self.last_record_toggle = now
+        self.last_record_start = now
         self.is_recording = True
+        self.was_in_match = True
+        if self.current_server_ip:
+            self.last_connected_server = self.current_server_ip
+        if self.current_map:
+            self.last_connected_map = self.current_map
+
         sub_type = "Scrim Practice" if self.is_scrim else "Official Match"
 
         # Query tournament team names (e.g. Froyotech, Witness Gaming, red, blu)
@@ -2797,10 +2839,10 @@ class PrecEngine:
 
     def stop_recording(self, reason="Match Finished"):
         now = time.time()
-        if not self.is_recording or (now - self.last_record_toggle < 3.0):
+        if not self.is_recording or (now - self.last_record_stop < 1.5):
             return
 
-        self.last_record_toggle = now
+        self.last_record_stop = now
         self.is_recording = False
         print(f"\n[{APP_NAME}] >>> STOP RECORDING <<< ({reason})", flush=True)
 
@@ -2826,6 +2868,18 @@ class PrecEngine:
         self.play_sound(is_start=False)
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status("Connected to TF2")
+
+    def send_cmd_response(self, cmd: str) -> str:
+        """Sends command to TF2 and returns the response string synchronously."""
+        if not self.sender:
+            return ""
+        try:
+            if hasattr(self.sender, "send_command"):
+                resp = self.sender.send_command(cmd)
+                return resp or ""
+        except Exception:
+            pass
+        return ""
 
     def send_cmd(self, cmd):
         if not self.sender:
@@ -2864,14 +2918,14 @@ class PrecEngine:
             if clean:
                 self.current_blu_team = clean
 
-        conn_match = re.search(r"Connecting to\s+([0-9\.\:]+)", line)
+        conn_match = re.search(r"Connecting to\s+([a-zA-Z0-9_\-\.\:]+)", line)
         if conn_match:
             self.current_server_ip = conn_match.group(1)
             self.apply_league_cvars()
 
-        if re.search(r"mp_tournament['\"\s]+(?:changed to\s+)?=?\s*['\"]?1", line, re.I):
+        if re.search(r"mp_tournament['\"]\s*(?:changed to\s+|=)?\s*['\"]?1", line, re.I):
             self.is_tournament = True
-        elif re.search(r"mp_tournament['\"\s]+(?:changed to\s+)?=?\s*['\"]?0", line, re.I):
+        elif re.search(r"mp_tournament['\"]\s*(?:changed to\s+|=)?\s*['\"]?0", line, re.I):
             self.is_tournament = False
 
         # Auto-detect league from whitelist or server hostname (in case configs loaded on server boot)
@@ -2955,22 +3009,41 @@ class PrecEngine:
         # SOAP DM & ProperPregame (Universal Match Live Indicators on serveme.tf & competitive servers)
         if re.search(r"\[SOAP\]\s+(?:Soap DM|Plugins)\s+unloaded", line, re.I) or "[ProperPregame] Class limits restored" in line:
             self.is_tournament = True
-            self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)")
+            if self.is_recording:
+                # If already recording during warmup, restart demo cleanly for official match
+                self.stop_recording("Warmup Ended / Match Live")
+                time.sleep(0.3)
+                self.start_recording("Soap DM Unloaded (Official Match Live)")
+            else:
+                self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)")
             return
 
+        # Whitelist enforcement message: indicates active tournament whitelist on server
         if re.search(r"has been disabled in this tournament match by the server whitelist", line, re.I):
             self.is_tournament = True
-            self.start_recording("Tournament Whitelist Activated (Match Live)")
+            if self.cfg.prec_mode >= 2 and not self.is_recording:
+                reconnect_note = "Mid-Match Reconnect" if self.was_in_match else "Mid-Game Join / Substitute"
+                self.start_recording(f"Tournament Whitelist Active ({reconnect_note})")
             return
 
         if "[SOAP] Match is starting" in line or "[SOAP] Match begins" in line:
             self.is_tournament = True
-            self.start_recording("SOAP DM Match Live")
+            if self.is_recording:
+                self.stop_recording("Warmup Ended / Match Live")
+                time.sleep(0.3)
+                self.start_recording("SOAP DM Match Live")
+            else:
+                self.start_recording("SOAP DM Match Live")
             return
 
         if re.search(r"(Both teams are ready|Match is LIVE|All players are ready)", line, re.I):
             self.is_tournament = True
-            self.start_recording("Competitive League Match Live")
+            if self.is_recording:
+                self.stop_recording("Pregame Ended / Match Live")
+                time.sleep(0.3)
+                self.start_recording("Competitive League Match Live")
+            else:
+                self.start_recording("Competitive League Match Live")
             return
 
         if 'World triggered "Round_Start"' in line:
@@ -2978,17 +3051,26 @@ class PrecEngine:
                 self.start_recording("Round Start")
             return
 
-        if re.search(r"Connected to\s+([0-9\.\:]+)", line) or "Team Fortress 2 is ready." in line:
+        # Player spawn or connection established -> inspect server tournament state
+        if re.search(r"Client reached server_spawn", line, re.I) or re.search(r"Connected to\s+([a-zA-Z0-9_\-\.\:]+)", line) or "Team Fortress 2 is ready." in line:
             if self.cfg.prec_mode >= 2 and not self.is_recording:
                 threading.Thread(target=self._check_midmatch_reconnect, daemon=True).start()
 
+        if re.search(r"Commencing connection retry", line, re.I):
+            if self.is_recording:
+                self.stop_recording("Connection Retry")
+            self.is_tournament = False
+            return
+
         if re.search(r"Win panel created", line, re.I) or re.search(r'Team ".*" won the (match|round)', line, re.I):
+            self.was_in_match = False
             if self.is_recording:
                 self.stop_recording("Round/Match Win Detected")
                 return
 
         # Demos.tf, LogsTF, and Soap DM Reload (Universal Competitive Match End Indicators)
         if "[demos.tf]: Demo recording completed" in line or "[LogsTF] Uploading logs" in line or re.search(r"\[SOAP\]\s+(?:Soap DM|Plugins)\s+(?:re)?loaded", line, re.I):
+            self.was_in_match = False
             if self.is_recording:
                 self.stop_recording("Match Ended (Logs.tf / demos.tf / Warmup Restored)")
                 return
@@ -3000,20 +3082,63 @@ class PrecEngine:
             return
 
     def _check_midmatch_reconnect(self):
-        time.sleep(2.5)
+        time.sleep(1.0)
         if not self.sender:
             return
-        print(f"[{APP_NAME}] Checking server tournament state...", flush=True)
-        self.send_cmd("mp_tournament")
-        time.sleep(0.3)
-        self.send_cmd("mp_tournament_whitelist")
-        time.sleep(0.3)
-        self.send_cmd("status")
-        time.sleep(1.0)
 
-        if self.is_tournament and self.cfg.prec_mode >= 2 and not self.is_recording:
-            print(f"[{APP_NAME}] mp_tournament 1 active on server — initiating match recording!", flush=True)
-            self.start_recording("Server in Tournament Mode on Join (mp_tournament 1)")
+        print(f"[{APP_NAME}] Checking server tournament status on connection...", flush=True)
+
+        # 1. Direct synchronous query of mp_tournament from TF2 via RCON
+        resp_tourney = self.send_cmd_response("mp_tournament")
+        if re.search(r'mp_tournament[\'"]?\s*(?:changed to\s+|=)?\s*[\'"]?1', resp_tourney, re.I):
+            self.is_tournament = True
+        elif re.search(r'mp_tournament[\'"]?\s*(?:changed to\s+|=)?\s*[\'"]?0', resp_tourney, re.I):
+            self.is_tournament = False
+
+        if not self.is_tournament:
+            self.send_cmd("mp_tournament")
+
+        # 2. Query tournament team names and whitelist
+        self.query_tournament_teams()
+        resp_wl = self.send_cmd_response("mp_tournament_whitelist")
+        if not resp_wl:
+            self.send_cmd("mp_tournament_whitelist")
+        else:
+            for l_id, prof in self.profiles.items():
+                if l_id == "custom":
+                    continue
+                patterns = [prof.get("prefix", l_id), l_id]
+                for p in prof.get("server_config_patterns", []):
+                    clean_p = re.sub(r'[^a-zA-Z0-9]', '', p)
+                    if len(clean_p) >= 2:
+                        patterns.append(clean_p)
+                if any(re.search(pat, resp_wl, re.I) for pat in patterns):
+                    self.is_tournament = True
+                    is_scrim = bool(re.search(r"scrim", resp_wl, re.I))
+                    if self.active_profile.get("id") != l_id or self.is_scrim != is_scrim:
+                        self.active_profile = prof
+                        self.is_scrim = is_scrim
+                        mode_label = "SCRIM MODE (Practice)" if is_scrim else "OFFICIAL MATCH"
+                        print(f"[{APP_NAME}] ⚡ AUTO-DETECTED LEAGUE FROM SERVER WHITELIST: {prof.get('name')} [{mode_label}]", flush=True)
+                        self.apply_league_cvars()
+                        if hasattr(self, "tray") and self.tray:
+                            self.tray.update_status(f"{prof.get('name')} [{mode_label}]")
+                    break
+
+        # 3. Check if reconnecting to the same match or joining midgame as substitute
+        is_reconnect = self.was_in_match and (
+            (self.current_server_ip and self.current_server_ip == self.last_connected_server) or
+            (self.current_map and self.current_map == self.last_connected_map)
+        )
+
+        if (self.is_tournament or is_reconnect) and self.cfg.prec_mode >= 2 and not self.is_recording:
+            self.is_tournament = True
+            if is_reconnect:
+                print(f"[{APP_NAME}] ⚡ Rejoined active match on {self.current_map} ({self.current_server_ip}) — resuming recording!", flush=True)
+                self.start_recording("Mid-Match Reconnect (ETF2L Rule 2.1 Recovery)")
+            else:
+                print(f"[{APP_NAME}] ⚡ Joined live tournament match in-progress (mp_tournament 1 active) — starting recording!", flush=True)
+                self.start_recording("Mid-Game Substitute / Tournament Join (mp_tournament 1)")
 
     def run(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
@@ -3153,9 +3278,11 @@ class PrecEngine:
 
 def find_existing_config():
     """Searches standard paths for existing PREC_Settings.cfg or Settings.cfg."""
+    app_dir = get_app_dir()
     search_dirs = [
         Path.cwd(),
-        get_app_dir(),
+        app_dir,
+        app_dir / "cfg",
     ]
 
     tf_dir = detect_tf2_directory()
@@ -3189,6 +3316,9 @@ if __name__ == "__main__":
     if any(arg in sys.argv for arg in ("--shortcut", "--create-shortcut")):
         create_desktop_shortcut()
         sys.exit(0)
+
+    # Ensure single instance to prevent dual-process conflicts
+    acquire_single_instance_lock()
 
     force_wizard = "--install" in sys.argv or "--setup" in sys.argv
 
