@@ -3,16 +3,19 @@
   "name": "CustomLander TF2 (CLTF2)",
   "rules_url": "https://docs.cltf2.com/",
   "prefix": "cltf2",
+  "scrim_prefix": "cltf2_scrim",
   "ds_enable": 0,
   "ds_autodelete": 0,
   "ds_screens": 1,
   "mandatory_status_screenshot": false,
+  "server_demo_checker_bypass": false,
   "server_config_patterns": [
-    "cltf2_(4s|ultiduo|hl|koth|3cp)",
+    "cltf2_(4s|ultiduo|hl|koth|3cp|scrim)",
     "\\[CLTF2\\]"
   ],
   "chat_triggers": [
     "Both teams are ready",
-    "Match is LIVE"
+    "Match is LIVE",
+    "\\[CLTF2\\] Match live"
   ]
 }

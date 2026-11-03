@@ -20,3 +20,4 @@ If you run or represent a competitive TF2 league, tournament, cup, or pug group 
    * **`chat_triggers`**: Phrases printed by your match plugins when a game officially goes live.
 3. Open a **Pull Request** on GitHub!
    Once merged, all players using P-REC worldwide will automatically have native compliance with your league!
+

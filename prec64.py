@@ -54,13 +54,14 @@ DEFAULT_LEAGUE_PROFILES = {
         "rules_url": "https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos",
         "config_repo": "https://github.com/ETF2L/gameserver-configs",
         "prefix": "etf2l",
+        "scrim_prefix": "etf2l_scrim",
         "ds_enable": 0,
         "ds_autodelete": 0,
         "ds_screens": 1,
         "mandatory_status_screenshot": True,
         "server_demo_checker_bypass": False,
         "server_config_patterns": [
-            r"etf2l_(6v6|9v9|golden_cap|ultiduo|bball)",
+            r"etf2l_(6v6|9v9|golden_cap|ultiduo|bball|scrim)",
             r"ETF2L config",
             r"config has been loaded"
         ],
@@ -76,14 +77,15 @@ DEFAULT_LEAGUE_PROFILES = {
         "rules_url": "https://docs.rgl.gg/rules/global/1008/?h=pov+demos#1008_5-pov-and-stv-demos",
         "config_repo": "https://github.com/RGLgg/server-resources-updater",
         "prefix": "rgl",
+        "scrim_prefix": "rgl_scrim",
         "ds_enable": 0,
         "ds_autodelete": 0,
         "ds_screens": 1,
         "mandatory_status_screenshot": False,
         "server_demo_checker_bypass": False,
         "server_config_patterns": [
-            r"rgl_(6s|hl|7s|pt|cast)",
-            r"RGL (6s|HL|7s|Prolander).*Config Executed"
+            r"rgl_(6s|hl|7s|pt|cast)(_scrim)?",
+            r"RGL (6s|HL|7s|Prolander).*(Config Executed|scrim)"
         ],
         "chat_triggers": [
             r"Both teams are ready",
@@ -97,15 +99,16 @@ DEFAULT_LEAGUE_PROFILES = {
         "rules_url": "https://docs.ozfortress.com/guides/pov_demo_recording/",
         "config_repo": "https://github.com/ozfortress/server-configs",
         "prefix": "ozf",
+        "scrim_prefix": "ozf_scrim",
         "ds_enable": 3,
         "ds_autodelete": 0,
         "ds_screens": 1,
         "mandatory_status_screenshot": False,
         "server_demo_checker_bypass": True,
         "server_config_patterns": [
-            r"ozfortress_(6v6|hl|ultiduo)",
-            r"ozf-(6s|hl|ud)",
-            r"ozfortress.*config loaded"
+            r"ozfortress_(6v6|hl|ultiduo)(_scrim)?",
+            r"ozf-(6s|hl|ud|scrim)",
+            r"ozfortress.*(config loaded|scrim)"
         ],
         "chat_triggers": [
             r"Both teams are ready",
@@ -117,13 +120,14 @@ DEFAULT_LEAGUE_PROFILES = {
         "name": "Matcha.tf (Asia/Pacific)",
         "rules_url": "https://rules.matcha.tf/",
         "prefix": "matcha",
+        "scrim_prefix": "matcha_scrim",
         "ds_enable": 0,
         "ds_autodelete": 0,
         "ds_screens": 1,
         "mandatory_status_screenshot": True,
         "server_demo_checker_bypass": False,
         "server_config_patterns": [
-            r"matcha_(6v6|hl|koth|5cp)",
+            r"matcha_(6v6|hl|koth|5cp|scrim)",
             r"\[Matcha\]"
         ],
         "chat_triggers": [
@@ -137,13 +141,14 @@ DEFAULT_LEAGUE_PROFILES = {
         "name": "CustomLander TF2 (CLTF2)",
         "rules_url": "https://docs.cltf2.com/",
         "prefix": "cltf2",
+        "scrim_prefix": "cltf2_scrim",
         "ds_enable": 0,
         "ds_autodelete": 0,
         "ds_screens": 1,
         "mandatory_status_screenshot": False,
         "server_demo_checker_bypass": False,
         "server_config_patterns": [
-            r"cltf2_(4s|ultiduo|hl|koth|3cp)",
+            r"cltf2_(4s|ultiduo|hl|koth|3cp|scrim)",
             r"\[CLTF2\]"
         ],
         "chat_triggers": [
@@ -157,6 +162,7 @@ DEFAULT_LEAGUE_PROFILES = {
         "name": "Custom / Casual / Mixes",
         "rules_url": "",
         "prefix": "custom",
+        "scrim_prefix": "custom_scrim",
         "ds_enable": 0,
         "ds_autodelete": 0,
         "ds_screens": 1,
@@ -303,16 +309,25 @@ class PrecConfig:
                 elif key in ("prec_tf_path", "tf_path"):
                     self.prec_tf_path = val
 
-        # Auto-generate secure password if not set or default
+        # Auto-detect DemoMan or generate secure password if not set or default
+        demoman = detect_demoman_config()
         if not self.prec_rcon_password or self.prec_rcon_password.lower() in ("changeme", "generate", ""):
-            generated_pw = secrets.token_hex(6)
-            self.prec_rcon_password = generated_pw
-            self._save_password_to_cfg(generated_pw)
-            print("\n" + "=" * 65, flush=True)
-            print(" [SECURITY] Generated new secure RCON password: " + generated_pw, flush=True)
-            print(f" Updated {self.cfg_path.name} automatically.", flush=True)
-            print(f" Ensure your Steam launch option has: +rcon_password {generated_pw}", flush=True)
-            print("=" * 65 + "\n", flush=True)
+            if demoman.get("rcon_password"):
+                self.prec_rcon_password = demoman["rcon_password"]
+                self._save_password_to_cfg(self.prec_rcon_password)
+                print(f"[DEMOMAN] Automatically adopted RCON password from DemoMan: {self.prec_rcon_password}", flush=True)
+            else:
+                generated_pw = secrets.token_hex(6)
+                self.prec_rcon_password = generated_pw
+                self._save_password_to_cfg(generated_pw)
+                print("\n" + "=" * 65, flush=True)
+                print(" [SECURITY] Generated new secure RCON password: " + generated_pw, flush=True)
+                print(f" Updated {self.cfg_path.name} automatically.", flush=True)
+                print(f" Ensure your Steam launch option has: +rcon_password {generated_pw}", flush=True)
+                print("=" * 65 + "\n", flush=True)
+
+        if not self.prec_tf_path and demoman.get("tf_path"):
+            self.prec_tf_path = str(demoman["tf_path"].resolve())
 
         print(f"[CONFIG] Loaded configuration from {self.cfg_path.resolve()}", flush=True)
         print(f"         League Profile: {self.prec_league.upper()} | Mode: {self.prec_mode} | Connection: {self.prec_connection_mode}", flush=True)
@@ -368,8 +383,72 @@ prec_tf_path             ""
 
 
 # ====================================================================
-# Directory & Process Helpers
+# Directory & Process Helpers (with DemoMan Auto-Detection)
 # ====================================================================
+
+def detect_demoman_config():
+    """
+    Detects if DemoMan is installed and automatically extracts:
+    - RCON password
+    - TF2 /tf path (from demoDirs in DemoMan leveldb)
+    """
+    candidates = []
+    if sys.platform == "win32":
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        app_data = os.environ.get("APPDATA", "")
+        if local_app:
+            candidates.append(Path(local_app) / "com.demomanapp.demoman/EBWebView/Default/Local Storage/leveldb")
+            candidates.append(Path(local_app) / "demoman")
+        if app_data:
+            candidates.append(Path(app_data) / "com.demomanapp.demoman/EBWebView/Default/Local Storage/leveldb")
+    else:
+        home = Path.home()
+        candidates.extend([
+            home / ".local/share/com.demomanapp.demoman/localstorage/leveldb",
+            home / ".config/com.demomanapp.demoman/localstorage/leveldb",
+            home / ".local/share/demoman",
+            home / ".config/demoman",
+        ])
+
+    found_pw = None
+    found_tf = None
+
+    for c in candidates:
+        if not c.exists():
+            continue
+        files = list(c.glob("*.log")) + list(c.glob("*.ldb"))
+        if not files and c.is_dir():
+            files = list(c.rglob("*.log")) + list(c.rglob("*.ldb"))
+
+        for f in files:
+            try:
+                data = f.read_bytes().decode("latin1", "ignore")
+                m_pw = re.findall(r'rconPassword[\s\x00-\x1f]*"([^"]+)"', data)
+                if m_pw:
+                    found_pw = m_pw[-1]
+                m_tf = re.findall(r'"([A-Za-z]:\\\\[^"]*?\\\\tf(?:\\\\[^"]*?)?)"', data)
+                if m_tf:
+                    cand_tf = Path(m_tf[-1].replace("\\\\", "\\"))
+                    while cand_tf and cand_tf.name.lower() != "tf" and len(cand_tf.parents) > 0:
+                        cand_tf = cand_tf.parent
+                    if cand_tf and cand_tf.exists() and cand_tf.name.lower() == "tf":
+                        found_tf = cand_tf
+                m_tf_linux = re.findall(r'"(/[^"]+/tf(?:/[^"]*)?)"', data)
+                if m_tf_linux:
+                    cand_tf = Path(m_tf_linux[-1])
+                    while cand_tf and cand_tf.name.lower() != "tf" and len(cand_tf.parents) > 0:
+                        cand_tf = cand_tf.parent
+                    if cand_tf and cand_tf.exists() and cand_tf.name.lower() == "tf":
+                        found_tf = cand_tf
+            except Exception:
+                pass
+
+    return {
+        "installed": bool(found_pw or found_tf),
+        "rcon_password": found_pw,
+        "tf_path": found_tf
+    }
+
 
 def get_app_dir():
     """Gets true directory whether running as a .py script or compiled PyInstaller binary."""
@@ -379,7 +458,16 @@ def get_app_dir():
 
 
 def detect_tf2_directory():
-    """Attempts to find the tf/ directory on Windows and Linux."""
+    """Attempts to find the tf/ directory on Windows and Linux, checking DemoMan config first."""
+    # 1. Prioritize path from DemoMan if present
+    try:
+        demoman = detect_demoman_config()
+        if demoman.get("tf_path") and demoman["tf_path"].exists():
+            return demoman["tf_path"]
+    except Exception:
+        pass
+
+    # 2. Standard Steam locations
     home = Path.home()
 
     if sys.platform == "win32":
@@ -612,8 +700,19 @@ def run_setup_wizard():
     print("=" * 65, flush=True)
     print("Welcome! Let's get your zero-lag match recorder installed.\n", flush=True)
 
+    # 0. Check DemoMan Installation
+    demoman = detect_demoman_config()
+    if demoman.get("installed"):
+        print("=" * 65, flush=True)
+        print(" [DEMOMAN DETECTED] Found existing DemoMan installation!", flush=True)
+        if demoman.get("tf_path"):
+            print(f"  * Auto-detected /tf folder:   {demoman['tf_path']}", flush=True)
+        if demoman.get("rcon_password"):
+            print(f"  * Auto-detected RCON token:  {demoman['rcon_password']}", flush=True)
+        print("=" * 65 + "\n", flush=True)
+
     # 1. ALWAYS ask where the /tf directory is (with auto-detected default)
-    detected = detect_tf2_directory()
+    detected = demoman.get("tf_path") or detect_tf2_directory()
     tf_path = None
 
     while True:
@@ -700,8 +799,18 @@ def run_setup_wizard():
 
     # 5. RCON Configuration
     rcon_pw = ""
-    if sys.stdin.isatty():
-        has_rcon = input("Do you already have DemoMan installed or an existing RCON password? [y/N]: ").strip().lower()
+    if demoman.get("rcon_password"):
+        d_pw = demoman["rcon_password"]
+        print(f"[DEMOMAN] Automatically detected DemoMan RCON password: '{d_pw}'", flush=True)
+        if sys.stdin.isatty():
+            use_demo = input(f"Adopt DemoMan's password ({d_pw})? [Y/n]: ").strip().lower()
+            if use_demo != 'n':
+                rcon_pw = d_pw
+        else:
+            rcon_pw = d_pw
+
+    if not rcon_pw and sys.stdin.isatty():
+        has_rcon = input("Do you already have an existing RCON password? [y/N]: ").strip().lower()
         if has_rcon == 'y':
             rcon_pw = input("Enter your existing RCON password: ").strip()
 
@@ -1004,6 +1113,7 @@ class PrecEngine:
         self.cfg = config
         self.is_recording = False
         self.is_tournament = False
+        self.is_scrim = False
         self.last_record_toggle = 0.0
         self.client_mode = None
         self.sender = None
@@ -1016,20 +1126,33 @@ class PrecEngine:
 
     def apply_league_cvars(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
-        print(f"[{APP_NAME}] Applying cvars for league profile: {prof_name}", flush=True)
+        mode_label = "SCRIM (Practice)" if self.is_scrim else "OFFICIAL MATCH"
+        print(f"[{APP_NAME}] Applying cvars for: {prof_name} [{mode_label}]", flush=True)
 
         self.send_cmd(f'ds_dir "{self.cfg.prec_dir}"')
         self.send_cmd(f"ds_notify {self.cfg.prec_notify}")
         self.send_cmd(f"ds_sound {self.cfg.prec_sound}")
 
-        screens_val = 1 if (self.cfg.prec_screens or self.active_profile.get("mandatory_status_screenshot")) else 0
-        self.send_cmd(f"ds_screens {screens_val}")
+        # In scrim mode, skip mandatory status screenshots to avoid cluttering screenshot folder
+        if self.is_scrim:
+            self.send_cmd("ds_screens 0")
+        else:
+            screens_val = 1 if (self.cfg.prec_screens or self.active_profile.get("mandatory_status_screenshot")) else 0
+            self.send_cmd(f"ds_screens {screens_val}")
+
         self.send_cmd(f"ds_autodelete {self.active_profile.get('ds_autodelete', 0)}")
         self.send_cmd(f"ds_min_streak {self.cfg.prec_min_streak}")
         self.send_cmd(f"ds_kill_delay {self.cfg.prec_kill_delay}")
         self.send_cmd(f"ds_log {self.cfg.prec_log}")
 
-        prefix = self.cfg.prec_tag if self.cfg.prec_tag else self.active_profile.get("prefix", self.cfg.prec_league)
+        # Prefix logic: if prec_tag set by user, use that. Otherwise use scrim_prefix or base prefix
+        if self.cfg.prec_tag:
+            prefix = self.cfg.prec_tag
+        elif self.is_scrim:
+            prefix = self.active_profile.get("scrim_prefix", f"{self.active_profile.get('prefix', self.cfg.prec_league)}_scrim")
+        else:
+            prefix = self.active_profile.get("prefix", self.cfg.prec_league)
+
         if prefix:
             self.send_cmd(f'ds_prefix "{prefix}"')
 
@@ -1072,7 +1195,8 @@ class PrecEngine:
 
         self.last_record_toggle = now
         self.is_recording = True
-        print(f"\n[{APP_NAME}] >>> START RECORDING <<< ({reason})", flush=True)
+        sub_type = "Scrim Practice" if self.is_scrim else "Official Match"
+        print(f"\n[{APP_NAME}] >>> START RECORDING <<< ({sub_type}: {reason})", flush=True)
 
         if self.active_profile.get("server_demo_checker_bypass"):
             self.send_cmd("ds_stop; ds_record")
@@ -1080,7 +1204,10 @@ class PrecEngine:
             self.send_cmd("ds_record")
 
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_start:
-            self.send_cmd(self.cfg.pr_message_start)
+            msg = self.cfg.pr_message_start
+            if self.is_scrim and "[P-REC]" in msg:
+                msg = msg.replace("[P-REC]", "[P-REC Scrim]")
+            self.send_cmd(msg)
 
         self.play_sound(is_start=True)
 
@@ -1093,7 +1220,9 @@ class PrecEngine:
         self.is_recording = False
         print(f"\n[{APP_NAME}] >>> STOP RECORDING <<< ({reason})", flush=True)
 
-        if self.cfg.prec_screens or self.active_profile.get("mandatory_status_screenshot"):
+        # In scrim mode, skip mandatory status screenshots unless explicitly configured
+        should_screen = (self.cfg.prec_screens and not self.is_scrim) or (self.active_profile.get("mandatory_status_screenshot") and not self.is_scrim)
+        if should_screen:
             print(f"[{APP_NAME}] Capturing mandatory status & scoreboard screenshot...", flush=True)
             self.send_cmd("status; jpeg")
             time.sleep(0.4)
@@ -1101,7 +1230,10 @@ class PrecEngine:
         self.send_cmd("ds_stop")
 
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_stop:
-            self.send_cmd(self.cfg.pr_message_stop)
+            msg = self.cfg.pr_message_stop
+            if self.is_scrim and "[P-REC]" in msg:
+                msg = msg.replace("[P-REC]", "[P-REC Scrim]")
+            self.send_cmd(msg)
 
         self.play_sound(is_start=False)
 
@@ -1131,18 +1263,36 @@ class PrecEngine:
         elif "mp_tournament 0" in line or "mp_tournament changed to 0" in line:
             self.is_tournament = False
 
-        # 1. Active League Triggers & Server Patterns (from leagues/*.json)
+        # 1. Auto-switch League Profile & Scrim / Match mode based on loaded server configs
+        for l_id, prof in self.profiles.items():
+            for pattern in prof.get("server_config_patterns", []):
+                if re.search(pattern, line, re.I):
+                    self.is_tournament = True
+                    is_scrim = bool(re.search(r"scrim", line, re.I) or re.search(r"scrim", pattern, re.I))
+
+                    # Switch profile or mode if changed
+                    if self.active_profile.get("id") != l_id or self.is_scrim != is_scrim:
+                        self.active_profile = prof
+                        self.is_scrim = is_scrim
+                        mode_label = "SCRIM MODE (Practice)" if is_scrim else "OFFICIAL MATCH"
+                        print(f"\n[{APP_NAME}] ⚡ AUTO-SWITCHED LEAGUE PROFILE: {prof.get('name')} [{mode_label}]", flush=True)
+                        print(f"[{APP_NAME}] Triggered by config execution: {line.strip()}", flush=True)
+                        self.apply_league_cvars()
+                    return
+
+        # Generic scrim config detection (e.g. exec scrim, loading scrim)
+        if re.search(r"\b(exec\s+[a-zA-Z0-9_]*scrim|loading\s+scrim|scrim_config)\b", line, re.I):
+            if not self.is_scrim:
+                self.is_scrim = True
+                print(f"\n[{APP_NAME}] ⚡ Switched to SCRIM MODE (Practice Match)", flush=True)
+                self.apply_league_cvars()
+
+        # 2. Active League Chat Triggers (from leagues/*.json)
         for trigger in self.active_profile.get("chat_triggers", []):
             if re.search(trigger, line, re.I):
                 self.is_tournament = True
                 self.start_recording(f"{self.active_profile.get('name', 'League')} Trigger: {trigger}")
                 return
-
-        for pattern in self.active_profile.get("server_config_patterns", []):
-            if re.search(pattern, line, re.I):
-                self.is_tournament = True
-                print(f"[{APP_NAME}] Recognized {self.active_profile.get('name', 'Tournament')} config execution: {line.strip()}", flush=True)
-                break
 
         # 2. General Tournament Live Events
         if re.search(r"The match will begin in \d+ seconds", line, re.I):

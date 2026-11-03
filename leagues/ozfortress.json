@@ -4,15 +4,16 @@
   "rules_url": "https://docs.ozfortress.com/guides/pov_demo_recording/",
   "config_repo": "https://github.com/ozfortress/server-configs",
   "prefix": "ozf",
+  "scrim_prefix": "ozf_scrim",
   "ds_enable": 3,
   "ds_autodelete": 0,
   "ds_screens": 1,
   "mandatory_status_screenshot": false,
   "server_demo_checker_bypass": true,
   "server_config_patterns": [
-    "ozfortress_(6v6|hl|ultiduo)",
-    "ozf-(6s|hl|ud)",
-    "ozfortress.*config loaded"
+    "ozfortress_(6v6|hl|ultiduo)(_scrim)?",
+    "ozf-(6s|hl|ud|scrim)",
+    "ozfortress.*(config loaded|scrim)"
   ],
   "chat_triggers": [
     "Both teams are ready",
