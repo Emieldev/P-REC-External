@@ -1,13 +1,13 @@
 # P-REC External (v1.0.0)
 ### Zero-Lag, Zero-Warmup Automated Match Recorder for Team Fortress 2 (64-Bit Native)
 
-[![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-blue.svg)](https://github.com/)
-[![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-blue.svg)](#)
-[![TF2 Architecture: 64-bit Native](https://img.shields.io/badge/TF2-64--bit%20Native-orange.svg)](#)
-[![Ruleset: ETF2L / AsiaFortress / RGL / ozfortress / Matcha / CLTF2](https://img.shields.io/badge/Ruleset-ETF2L%20%7C%20AsiaFortress%20%7C%20RGL%20%7C%20ozfortress%20%7C%20Matcha%20%7C%20CLTF2-green.svg)](#)
-[![100% VAC-Safe](https://img.shields.io/badge/VAC-100%25%20Safe-brightgreen.svg)](#)
-[![100% Vibecoded](https://img.shields.io/badge/Codebase-100%25%20Vibecoded-purple.svg)](#)
-[![Dependabot](https://img.shields.io/badge/Dependabot-Enabled-blue.svg)](#)
+[![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-blue.svg)](https://github.com/Emieldev/P-REC-External/releases)
+[![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-blue.svg)](https://github.com/Emieldev/P-REC-External)
+[![TF2 Architecture: 64-bit Native](https://img.shields.io/badge/TF2-64--bit%20Native-orange.svg)](https://github.com/Emieldev/P-REC-External)
+[![Ruleset: ETF2L / AsiaFortress / RGL / ozfortress / Matcha / CLTF2](https://img.shields.io/badge/Ruleset-ETF2L%20%7C%20AsiaFortress%20%7C%20RGL%20%7C%20ozfortress%20%7C%20Matcha%20%7C%20CLTF2-green.svg)](https://github.com/Emieldev/P-REC-External)
+[![100% VAC-Safe](https://img.shields.io/badge/VAC-100%25%20Safe-brightgreen.svg)](https://github.com/Emieldev/P-REC-External)
+[![100% Vibecoded](https://img.shields.io/badge/Codebase-100%25%20Vibecoded-purple.svg)](https://github.com/Emieldev/P-REC-External)
+[![Dependabot](https://img.shields.io/badge/Dependabot-Enabled-blue.svg)](https://github.com/Emieldev/P-REC-External)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 ---
@@ -273,6 +273,15 @@ All league rules are stored as independent JSON files in the [`leagues/`](file:/
 | `alias pr_message_start` | `say_team [PREC] Recording started.` | Chat message sent when recording begins. |
 | `alias pr_message_stop` | `say_team [PREC] Stop recording.` | Chat message sent when recording ends. |
 | `alias pr_message_mark` | `say_team [PREC] Bookmark placed.` | Chat message sent when a bookmark is placed. |
+
+---
+
+## 🙏 Credits & Acknowledgements
+
+* **The Original P-REC:** Huge respect and credit to **Aethelred (Orange)** for creating the legendary original [P-REC (POV - Record)](https://github.com/Orange-TF2/p-rec) Source engine plugin that served the competitive TF2 community for over a decade.
+* **PeachREC:** Thanks to **peaches** for [PeachREC](https://github.com/peaches-tf2/PeachREC) and demonstrating the competitive scene's demand for modern automated recording solutions following the 64-bit TF2 update.
+* **DemoMan:** Credit to the [DemoMan](https://github.com/DemomanApp/DemoMan) developers for creating an awesome demo manager and modern TF2 ecosystem tool.
+* **Competitive Leagues:** Respect to ETF2L, AsiaFortress, RGL.gg, ozfortress, Matcha.tf, and CLTF2 for keeping competitive Team Fortress 2 thriving worldwide.
 
 ---
 

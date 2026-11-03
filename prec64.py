@@ -1156,7 +1156,7 @@ def get_icon_path(filename="supreme_soviet.png"):
         if cand.exists():
             return cand
     for d in dirs:
-        for fallback in ["supreme_soviet.png", "supreme_soviet.ico", "thats_a_wrap.png"]:
+        for fallback in ["supreme_soviet.png", "supreme_soviet.ico"]:
             cand = d / fallback
             if cand.exists():
                 return cand
