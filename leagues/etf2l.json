@@ -17,6 +17,8 @@
   "chat_triggers": [
     "Both teams are ready",
     "Match is LIVE",
-    "All players are ready"
+    "All players are ready",
+    "\\[SOAP\\] (Soap DM|Plugins) unloaded",
+    "\\[ProperPregame\\] Class limits restored"
   ]
 }

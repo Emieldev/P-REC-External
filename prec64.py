@@ -74,7 +74,9 @@ DEFAULT_LEAGUE_PROFILES = {
         "chat_triggers": [
             r"Both teams are ready",
             r"Match is LIVE",
-            r"All players are ready"
+            r"All players are ready",
+            r"\[SOAP\] (Soap DM|Plugins) unloaded",
+            r"\[ProperPregame\] Class limits restored"
         ]
     },
     "asiafortress": {
@@ -96,7 +98,9 @@ DEFAULT_LEAGUE_PROFILES = {
         "chat_triggers": [
             r"Both teams are ready",
             r"Match is LIVE",
-            r"All players are ready"
+            r"All players are ready",
+            r"\[SOAP\] (Soap DM|Plugins) unloaded",
+            r"\[ProperPregame\] Class limits restored"
         ]
     },
     "rgl": {
@@ -200,7 +204,9 @@ DEFAULT_LEAGUE_PROFILES = {
         "chat_triggers": [
             r"Both teams are ready",
             r"Match is LIVE",
-            r"All players are ready"
+            r"All players are ready",
+            r"\[SOAP\] (Soap DM|Plugins) unloaded",
+            r"\[ProperPregame\] Class limits restored"
         ]
     }
 }
@@ -2946,6 +2952,17 @@ class PrecEngine:
                 self.start_recording("Tournament Mode Restarted (Live)")
             return
 
+        # SOAP DM & ProperPregame (Universal Match Live Indicators on serveme.tf & competitive servers)
+        if re.search(r"\[SOAP\]\s+(?:Soap DM|Plugins)\s+unloaded", line, re.I) or "[ProperPregame] Class limits restored" in line:
+            self.is_tournament = True
+            self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)")
+            return
+
+        if re.search(r"has been disabled in this tournament match by the server whitelist", line, re.I):
+            self.is_tournament = True
+            self.start_recording("Tournament Whitelist Activated (Match Live)")
+            return
+
         if "[SOAP] Match is starting" in line or "[SOAP] Match begins" in line:
             self.is_tournament = True
             self.start_recording("SOAP DM Match Live")
@@ -2968,6 +2985,12 @@ class PrecEngine:
         if re.search(r"Win panel created", line, re.I) or re.search(r'Team ".*" won the (match|round)', line, re.I):
             if self.is_recording:
                 self.stop_recording("Round/Match Win Detected")
+                return
+
+        # Demos.tf, LogsTF, and Soap DM Reload (Universal Competitive Match End Indicators)
+        if "[demos.tf]: Demo recording completed" in line or "[LogsTF] Uploading logs" in line or re.search(r"\[SOAP\]\s+(?:Soap DM|Plugins)\s+(?:re)?loaded", line, re.I):
+            if self.is_recording:
+                self.stop_recording("Match Ended (Logs.tf / demos.tf / Warmup Restored)")
                 return
 
         if re.search(r"(Loading map|Disconnecting from server|Dropped .* from server)", line, re.I):
