@@ -720,52 +720,51 @@ def clean_conflict(conflict: dict):
         print(f"[CLEANUP ERROR] Could not clean {path}: {e}", flush=True)
 
 
-def scan_cfg_candidates(tf_path: Path):
+def find_target_autoexec(tf_path: Path) -> Path:
     """
-    Audits tf/cfg/overrides and tf/cfg/ primarily, plus subfolders,
-    looking for autoexecs, overrides, and configs containing demo settings.
+    Finds the single active autoexec.cfg for TF2.
+    Prioritizes:
+    1. tf/cfg/overrides/autoexec.cfg (mastercomfig / modern configs)
+    2. tf/cfg/autoexec.cfg (standard TF2 location)
+    If neither exists, targets overrides/autoexec.cfg if overrides/ exists,
+    otherwise cfg/autoexec.cfg.
+    Never creates multiple autoexec files and never targets game_overrides.cfg.
+    """
+    cfg_dir = tf_path / "cfg"
+    overrides_auto = cfg_dir / "overrides" / "autoexec.cfg"
+    standard_auto = cfg_dir / "autoexec.cfg"
+
+    if overrides_auto.exists():
+        return overrides_auto
+    if standard_auto.exists():
+        return standard_auto
+
+    if (cfg_dir / "overrides").exists():
+        return overrides_auto
+    return standard_auto
+
+
+def clean_legacy_peachrec_configs(tf_path: Path):
+    """
+    Scans tf/cfg/ to comment out conflicting PeachREC lines in any config,
+    without injecting P-REC settings into non-autoexec files.
     """
     cfg_dir = tf_path / "cfg"
     if not cfg_dir.exists():
-        return []
-
-    primary_candidates = [
-        cfg_dir / "overrides/autoexec.cfg",
-        cfg_dir / "autoexec.cfg",
-        cfg_dir / "overrides/game_overrides.cfg",
-    ]
-
-    found = []
-    seen = set()
-
-    # Check primary locations
-    for p in primary_candidates:
-        if p.exists():
-            found.append(p)
-            seen.add(str(p.resolve()).lower())
-        elif p.name == "autoexec.cfg" and p.parent.exists():
-            # If autoexec does not exist yet, we can create it
-            found.append(p)
-            seen.add(str(p.resolve()).lower())
-
-    # Quick scan of all cfg files in subfolders for demo commands or peachrec
+        return
     for p in cfg_dir.glob("**/*.cfg"):
-        resolved_str = str(p.resolve()).lower()
-        if resolved_str in seen:
-            continue
         if "prec" in p.name.lower() or "settings" in p.name.lower():
             continue
-
         try:
             with open(p, "r", encoding="utf-8", errors="ignore") as f:
-                head = f.read(4096)
-            if any(k in head for k in ("ds_enable", "ds_autodelete", "peachrec")):
-                found.append(p)
-                seen.add(resolved_str)
+                content = f.read()
+            if re.search(r'^\s*exec\s+peachrec', content, re.MULTILINE | re.I):
+                updated = re.sub(r'^(exec\s+peachrec.*)', r'// \1 (disabled for P-REC)', content, flags=re.MULTILINE | re.I)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(updated)
+                print(f"[CLEANUP] Disabled legacy PeachREC loop in: {p.relative_to(tf_path)}", flush=True)
         except Exception:
             pass
-
-    return found
 
 
 def get_recommended_snippet(cfg_filename="PREC_Settings.cfg"):
@@ -1129,56 +1128,38 @@ def run_setup_wizard():
         except Exception as e:
             print(f"[INFO] Using built-in league profiles ({e})", flush=True)
 
-    # 8. Audit and update tf/cfg/overrides and tf/cfg/ (One-by-one or in Bulk)
-    print("\n[AUDIT] Scanning tf/cfg/overrides/ and tf/cfg/ for pre-existing configs...", flush=True)
-    cfg_candidates = scan_cfg_candidates(tf_path)
+    # 8. Detect and update the single active autoexec.cfg
+    print("\n[AUDIT] Locating your active autoexec.cfg in tf/cfg/...", flush=True)
+    target_autoexec = find_target_autoexec(tf_path)
+    rel_auto = target_autoexec.relative_to(tf_path)
+    status_str = "Pre-existing file" if target_autoexec.exists() else "Will be created"
 
-    if cfg_candidates:
-        print("=" * 65, flush=True)
-        print(f"Found {len(cfg_candidates)} configuration file(s):", flush=True)
-        for idx, cand in enumerate(cfg_candidates, 1):
-            st = "(Exists)" if cand.exists() else "(Will be created)"
-            print(f"  [{idx}] {cand.relative_to(tf_path)} {st}", flush=True)
-        print("=" * 65, flush=True)
-        print("How would you like to update pre-existing configs with optimal P-REC settings?")
-        print("  [1] Bulk apply to all files (Recommended)")
-        print("  [2] Review and approve changes file-by-file (one by one)")
-        print("  [3] Skip all (make no changes to existing files)")
+    # Safely clean legacy PeachREC loops from all configs
+    clean_legacy_peachrec_configs(tf_path)
 
-        if sys.stdin.isatty():
-            apply_mode = input("Enter choice [1-3, default 1]: ").strip()
-        else:
-            apply_mode = "1"
+    print("=" * 65, flush=True)
+    print(f"Target Primary Autoexec: {rel_auto} ({status_str})", flush=True)
+    print(f"Path: {target_autoexec.resolve()}", flush=True)
+    print("=" * 65, flush=True)
+    print("P-REC External only needs to load once in your primary autoexec.", flush=True)
+    print("It will NOT touch game_overrides.cfg or create duplicate configs.\n", flush=True)
+    print("Proposed addition:\n" + get_recommended_snippet(cfg_target.name), flush=True)
 
-        if apply_mode == "2":
-            # File by file
-            for cand in cfg_candidates:
-                rel = cand.relative_to(tf_path)
-                print(f"\n--- Reviewing: {rel} ---", flush=True)
-                print("Proposed additions / updates:\n" + get_recommended_snippet(cfg_target.name), flush=True)
-                if sys.stdin.isatty():
-                    ans = input(f"Apply changes to {rel}? [Y/n]: ").strip().lower()
-                else:
-                    ans = "y"
-                if ans != 'n':
-                    apply_cfg_update(cand, cfg_target.name)
-                    print(f"[OK] Updated {rel}", flush=True)
-                else:
-                    print(f"[SKIP] Automatic update declined for {rel}.", flush=True)
-                    show_manual_cfg_instructions(cand, cfg_target.name, tf_path)
-        elif apply_mode != "3":
-            # Bulk
-            for cand in cfg_candidates:
-                apply_cfg_update(cand, cfg_target.name)
-                print(f"[OK] Updated {cand.relative_to(tf_path)}", flush=True)
-        else:
-            print("\n[SKIP] Automatic updates declined for all files.", flush=True)
-            for cand in cfg_candidates:
-                show_manual_cfg_instructions(cand, cfg_target.name, tf_path)
+    if sys.stdin.isatty():
+        ans = input(f"Add optimal P-REC settings to {rel_auto}? [Y/n]: ").strip().lower()
+    else:
+        ans = "y"
+
+    if ans != "n":
+        apply_cfg_update(target_autoexec, cfg_target.name)
+        print(f"[OK] Successfully configured {rel_auto}!\n", flush=True)
+    else:
+        print(f"[SKIP] Automatic update declined for {rel_auto}.", flush=True)
+        show_manual_cfg_instructions(target_autoexec, cfg_target.name, tf_path)
 
     # 9. Auto-Start Configuration
     if sys.stdin.isatty():
-        print("\n" + "=" * 65, flush=True)
+        print("=" * 65, flush=True)
         print(" [SYSTEM STARTUP]", flush=True)
         print("=" * 65, flush=True)
         os_label = "Windows" if sys.platform == "win32" else "system login"
@@ -1196,18 +1177,20 @@ def run_setup_wizard():
             set_startup(False)
             print("[INFO] Auto-start not enabled.\n", flush=True)
 
-    # 10. Output Steam Launch Option (Short & Simple)
+    # 10. Output Steam Launch Options (Both RCON and Netcon)
     print("=" * 65, flush=True)
-    print("             SETUP COMPLETE! STEAM LAUNCH OPTION:              ", flush=True)
+    print("             SETUP COMPLETE! STEAM LAUNCH OPTIONS:             ", flush=True)
     print("=" * 65, flush=True)
-    print("Add this ONE short parameter to TF2 in Steam:\n", flush=True)
-    print("   -netconport 2121\n", flush=True)
-    print("How to add in Steam:", flush=True)
-    print("  1. In your Steam Library, right-click Team Fortress 2 -> Properties.", flush=True)
-    print("  2. Under 'Launch Options', paste: -netconport 2121", flush=True)
+    print("Choose ONE of the following and paste it into TF2's Launch Options", flush=True)
+    print("in Steam (Right-click Team Fortress 2 in Steam -> Properties):\n", flush=True)
+    print("▶ Option 1: RCON Mode (Recommended for standard TF2 & DemoMan):", flush=True)
+    print(f"  -condebug -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n", flush=True)
+    print("▶ Option 2: Netcon Mode (Ultra-short, 16 characters):", flush=True)
+    print("  -netconport 2121\n", flush=True)
     print("-" * 65, flush=True)
-    print("That's it! When TF2 launches, P-REC External connects automatically", flush=True)
-    print("with zero lag, zero warmup bloat, and full league compliance.", flush=True)
+    print("Both options fit directly into Steam's Launch Options box!", flush=True)
+    print("When TF2 opens, P-REC External connects automatically and announces", flush=True)
+    print("its status directly into your TF2 in-game developer console.", flush=True)
     print("=" * 65, flush=True)
 
     if sys.stdin.isatty():
@@ -1459,6 +1442,7 @@ class WindowsSystemTray:
         self.config_path = str(config_path) if config_path else ""
         self.tf_path = str(tf_path) if tf_path else ""
         self.on_exit_callback = on_exit_callback
+        self.on_check_conn_callback = None
         self.status = "Waiting for TF2..."
         self.hwnd = None
         self.nid = None
@@ -1598,11 +1582,12 @@ class WindowsSystemTray:
 
             ID_STATUS = 1001
             ID_TOGGLE_CONSOLE = 1002
-            ID_SETTINGS = 1003
-            ID_CUSTOM_DIR = 1004
-            ID_UPDATE = 1005
-            ID_STARTUP = 1006
-            ID_EXIT = 1007
+            ID_CHECK_CONN = 1003
+            ID_STARTUP = 1004
+            ID_SETTINGS = 1005
+            ID_CUSTOM_DIR = 1006
+            ID_UPDATE = 1007
+            ID_EXIT = 1008
 
             class NOTIFYICONDATAW(ctypes.Structure):
                 _fields_ = [
@@ -1660,6 +1645,8 @@ class WindowsSystemTray:
                 console_label = "Hide Console Window" if self.console_visible else "Show Console Window"
                 user32.AppendMenuW(h_menu, MF_STRING, ID_TOGGLE_CONSOLE, console_label)
 
+                user32.AppendMenuW(h_menu, MF_STRING, ID_CHECK_CONN, "Check RCON / Connection")
+
                 startup_flag = MF_CHECKED if is_startup_enabled() else MF_UNCHECKED
                 user32.AppendMenuW(h_menu, MF_STRING | startup_flag, ID_STARTUP, "Start with Windows")
 
@@ -1683,7 +1670,7 @@ class WindowsSystemTray:
                         self.open_settings()
                     return 0
                 elif msg == WM_COMMAND:
-                    cmd_id = wintypes.LOWORD(wparam)
+                    cmd_id = int(wparam) & 0xFFFF
                     if cmd_id == ID_UPDATE:
                         if getattr(self, "available_update", None) and self.available_update.get("url"):
                             try:
@@ -1692,6 +1679,9 @@ class WindowsSystemTray:
                                 pass
                     elif cmd_id == ID_TOGGLE_CONSOLE:
                         self.toggle_console()
+                    elif cmd_id == ID_CHECK_CONN:
+                        if getattr(self, "on_check_conn_callback", None):
+                            threading.Thread(target=self.on_check_conn_callback, daemon=True).start()
                     elif cmd_id == ID_STARTUP:
                         set_startup(not is_startup_enabled())
                     elif cmd_id == ID_SETTINGS:
@@ -1791,6 +1781,7 @@ class PrecEngine:
             tf_path=self.cfg.prec_tf_path,
             on_exit_callback=self.stop_all
         )
+        self.tray.on_check_conn_callback = self.check_connection
         self.tray.start()
 
         # Hide console to system tray (hidden pictograms) if configured
@@ -1808,6 +1799,79 @@ class PrecEngine:
             except Exception:
                 pass
         threading.Thread(target=_bg_update_check, daemon=True).start()
+
+    def check_connection(self):
+        """
+        Manually tests connection to TF2, prints diagnostics,
+        sends confirmation to TF2 in-game console, and updates tray status.
+        """
+        prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
+        print("\n" + "=" * 60, flush=True)
+        print(f"[{APP_NAME}] --- RCON & Netcon Connection Diagnostics ---", flush=True)
+        print("=" * 60, flush=True)
+
+        if self.sender:
+            mode_upper = self.client_mode.upper()
+            port = self.cfg.prec_netcon_port if self.client_mode == "netcon" else self.cfg.prec_rcon_port
+            print(f"[STATUS] Connected to Team Fortress 2 via {mode_upper} (Port {port})!", flush=True)
+            print(f"         Active Profile: {prof_name}", flush=True)
+            print(f"         Recording Mode: {self.cfg.prec_mode}", flush=True)
+            print(f"         Tournament Live: {'YES' if self.is_tournament else 'NO (Waiting for match countdown)'}", flush=True)
+            print(f"         Currently Recording: {'YES' if self.is_recording else 'NO'}", flush=True)
+
+            # In-game console feedback
+            self.send_cmd('echo ""')
+            self.send_cmd('echo "[P-REC External] ================================================"')
+            self.send_cmd('echo "[P-REC External] CONNECTION CHECK: SUCCESS!"')
+            self.send_cmd(f'echo "[P-REC External] Communication active via {mode_upper} (Port {port})"')
+            self.send_cmd(f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"')
+            self.send_cmd('echo "[P-REC External] All systems operational. Match monitoring engaged."')
+            self.send_cmd('echo "[P-REC External] ================================================"')
+            self.send_cmd('echo ""')
+
+            if hasattr(self, "tray") and self.tray:
+                self.tray.update_status(f"Connected ({mode_upper} • {prof_name}) - OK")
+            self.play_sound(is_start=True)
+            print("[RESULT] In-game confirmation sent to TF2 developer console (~).", flush=True)
+            print("[RESULT] Connection is fully operational!\n", flush=True)
+        else:
+            print("[STATUS] Not currently connected to Team Fortress 2.", flush=True)
+            print("P-REC External is probing ports on localhost...", flush=True)
+
+            # Probe Netcon
+            netcon_ok = False
+            try:
+                nc = NetconClient(port=self.cfg.prec_netcon_port)
+                nc.connect(timeout=0.8)
+                nc.close()
+                netcon_ok = True
+                print(f"  [+] Netcon (Port {self.cfg.prec_netcon_port}): PORT OPEN! TF2 is listening.", flush=True)
+            except Exception:
+                print(f"  [-] Netcon (Port {self.cfg.prec_netcon_port}): Port closed / not listening.", flush=True)
+
+            # Probe RCON
+            rcon_ok = False
+            try:
+                rc = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password)
+                rc.connect(timeout=0.8)
+                rc.close()
+                rcon_ok = True
+                print(f"  [+] RCON (Port {self.cfg.prec_rcon_port}): PORT OPEN! Password authenticated successfully.", flush=True)
+            except Exception as e:
+                print(f"  [-] RCON (Port {self.cfg.prec_rcon_port}): Port closed or password mismatch ({e}).", flush=True)
+
+            if not netcon_ok and not rcon_ok:
+                print("\n[DIAGNOSIS] Team Fortress 2 is either not running yet, or missing launch options.", flush=True)
+                print("Make sure you have ONE of these set in TF2 Launch Options in Steam:\n", flush=True)
+                print(f"Option 1 (RCON):   -condebug -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start", flush=True)
+                print(f"Option 2 (Netcon): -netconport {self.cfg.prec_netcon_port}\n", flush=True)
+                if hasattr(self, "tray") and self.tray:
+                    self.tray.update_status("Waiting for TF2...")
+                self.play_sound(is_start=False)
+            else:
+                print("\n[DIAGNOSIS] Port is open! The main listener loop will hook in within 2 seconds.", flush=True)
+
+        print("=" * 60 + "\n", flush=True)
 
     def stop_all(self):
         print(f"\n[{APP_NAME}] Exit requested from System Tray. Shutting down...", flush=True)
@@ -1859,6 +1923,9 @@ class PrecEngine:
         else:
             print(f"        [{prof_name}] Set ds_enable {ds_mode} (manual mode: auto-triggered on match live).", flush=True)
 
+        self.send_cmd(f'echo "[P-REC External] League profile active: {prof_name} [{mode_label}]"')
+        self.send_cmd(f'echo "[P-REC External] Target demo directory: tf/{self.cfg.prec_dir}/ | Prefix: {prefix}"')
+
     def play_sound(self, is_start=True):
         if not self.cfg.prec_sound:
             return
@@ -1899,6 +1966,9 @@ class PrecEngine:
         else:
             self.send_cmd("ds_record")
 
+        self.send_cmd(f'echo "[P-REC External] >>> RECORDING STARTED ({sub_type}: {reason}) <<<"')
+        self.send_cmd(f'echo "[P-REC External] Target demo directory: tf/{self.cfg.prec_dir}/"')
+
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_start:
             msg = self.cfg.pr_message_start
             if self.is_scrim and "[P-REC]" in msg:
@@ -1926,6 +1996,8 @@ class PrecEngine:
             time.sleep(0.4)
 
         self.send_cmd("ds_stop")
+        self.send_cmd(f'echo "[P-REC External] >>> RECORDING STOPPED ({reason}) <<<"')
+        self.send_cmd(f'echo "[P-REC External] Demo finalized and saved in tf/{self.cfg.prec_dir}/"')
 
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_stop:
             msg = self.cfg.pr_message_stop
@@ -2064,6 +2136,13 @@ class PrecEngine:
                     self.sender = netcon
                     self.client_mode = "netcon"
                     print(f"\n[CONNECTED] Netcon stream active on port {self.cfg.prec_netcon_port}!", flush=True)
+                    self.send_cmd('echo ""')
+                    self.send_cmd('echo "[P-REC External] ================================================"')
+                    self.send_cmd(f'echo "[P-REC External] CONNECTED: {APP_FULL_TITLE} via NETCON"')
+                    self.send_cmd(f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"')
+                    self.send_cmd('echo "[P-REC External] All systems working! Match monitoring engaged."')
+                    self.send_cmd('echo "[P-REC External] ================================================"')
+                    self.send_cmd('echo ""')
                     self.apply_league_cvars()
                     connected = True
                     if hasattr(self, "tray") and self.tray:
@@ -2079,6 +2158,13 @@ class PrecEngine:
                     self.sender = rcon
                     self.client_mode = "rcon"
                     print(f"\n[CONNECTED] RCON session active on port {self.cfg.prec_rcon_port} (DemoMan bridge)!", flush=True)
+                    self.send_cmd('echo ""')
+                    self.send_cmd('echo "[P-REC External] ================================================"')
+                    self.send_cmd(f'echo "[P-REC External] CONNECTED: {APP_FULL_TITLE} via RCON"')
+                    self.send_cmd(f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"')
+                    self.send_cmd('echo "[P-REC External] All systems working! Match monitoring engaged."')
+                    self.send_cmd('echo "[P-REC External] ================================================"')
+                    self.send_cmd('echo ""')
                     self.apply_league_cvars()
                     connected = True
                     if hasattr(self, "tray") and self.tray:

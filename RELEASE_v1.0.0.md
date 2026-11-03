@@ -74,13 +74,8 @@
 ### Linux:
 1. Download `prec64` and `PREC_Settings.cfg`.
 2. Make executable: `chmod +x prec64`
-3. Add `-netconport 2121` to TF2 Launch Options in Steam.
+3. Add `-netconport 2121` (or RCON options) to TF2 Launch Options in Steam.
 4. Run `./prec64 &` in the background.
-3. Run `./prec64 --install` to complete setup.
-4. Add launch options to TF2 in Steam:
-   ```text
-   /path/to/tf/custom/P-REC/prec64 & %command% -condebug -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
-   ```
 
 ---
 

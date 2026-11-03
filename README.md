@@ -49,6 +49,8 @@ When running on Windows, P-REC External lives quietly in your system tray under 
 * **Right-Click Context Menu:**
   * **Status Header:** Live connection and recording status (e.g. `P-REC External (Connected)`).
   * **Show / Hide Console Window:** Toggles terminal window visibility if you ever want to check live logs.
+  * **Check RCON / Connection:** Manually tests communication with TF2, outputs diagnostics, and sends confirmation into the in-game developer console (`~`).
+  * **Start with Windows:** 1-click toggle to boot silently with Windows directly into your hidden system tray.
   * **Go to Settings (PREC_Settings.cfg):** Quick one-click configuration access.
   * **Open tf/custom/ Folder:** Instantly opens your TF2 mods folder in File Explorer.
   * **Close P-REC External:** Stops recording cleanly, frees ports, and shuts down the background process.
@@ -176,27 +178,29 @@ python3 prec64.py --install
 
 ---
 
-## 🚀 Steam Launch Option (Short & Simple)
+## 🚀 Steam Launch Options (Choose One)
 
-You only need **ONE short parameter** in your TF2 Launch Options in Steam (**Right-click Team Fortress 2 in Steam -> Properties -> General -> Launch Options**):
+You can choose either of these two options in TF2's Launch Options in Steam (**Right-click Team Fortress 2 in Steam -> Properties -> General -> Launch Options**). Both fit directly into Steam's box with zero shell wrappers:
 
+### ▶ Option 1: RCON Mode (Recommended for standard TF2 & DemoMan)
+```text
+-condebug -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
+```
+*(If you already use [DemoMan](https://github.com/DemomanApp/DemoMan), keep DemoMan's launch options as they are — P-REC External detects DemoMan automatically and hooks into port 27969).*
+
+### ▶ Option 2: Netcon Mode (Ultra-Short, 16 characters)
 ```text
 -netconport 2121
 ```
 
-That's literally it! Just **16 characters**.
-
 ### How it works:
 1. Run `prec64.exe` (it sits silently in your Windows System Tray under **Hidden Pictograms** with the TF2 Supreme Soviet icon).
 2. Launch Team Fortress 2 from Steam.
-3. P-REC External connects automatically through the local Netcon socket, monitors the match live, and records your tournament demos with zero warmup bloat and full league compliance!
+3. P-REC External connects automatically, prints a confirmation into your in-game developer console (`~`), monitors tournament status live, and records your official demos with zero warmup bloat!
 
 > [!TIP]
 > **Want it to start automatically with your PC?**
 > In the setup wizard (`prec64.exe --install`), enable **Start with Windows**, or right-click the Supreme Soviet tray icon and click **Start with Windows**. P-REC External will launch silently into your hidden tray whenever Windows boots!
-
-### (Optional) DemoMan / Legacy RCON Users
-If you already use [DemoMan](https://github.com/DemomanApp/DemoMan), keep DemoMan's launch options in Steam as they are. P-REC External detects DemoMan automatically and hooks into port 27969 with zero extra setup needed.
 
 ---
 
