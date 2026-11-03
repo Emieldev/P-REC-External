@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 echo ========================================================
-echo Building P-REC 64 Standalone Executable (Windows)
+echo Building P-REC External Standalone Executable (Windows)
 echo ========================================================
 
 python -m PyInstaller --version >nul 2>&1
@@ -12,8 +12,8 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo Compiling prec64.py into single-file binary with bundled league profiles...
-python -m PyInstaller --onefile --name prec64 --add-data "leagues;leagues" --clean --noconfirm prec64.py
+echo Compiling prec64.py into single-file binary with bundled assets and league profiles...
+python -m PyInstaller --onefile --name prec64 --add-data "leagues;leagues" --add-data "assets;assets" --clean --noconfirm prec64.py
 
 if %errorlevel% equ 0 (
     echo.
@@ -29,4 +29,3 @@ if %errorlevel% equ 0 (
 )
 
 endlocal
-

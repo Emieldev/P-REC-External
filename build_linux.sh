@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "========================================================"
-echo "Building P-REC 64 Standalone Binary (Linux)"
+echo "Building P-REC External Standalone Binary (Linux)"
 echo "========================================================"
 
 if ! command -v pyinstaller &> /dev/null && ! python3 -m PyInstaller --version &> /dev/null; then
@@ -13,11 +13,11 @@ if ! command -v pyinstaller &> /dev/null && ! python3 -m PyInstaller --version &
     python3 -m pip install --user pyinstaller
 fi
 
-echo "Compiling prec64.py into single-file binary with bundled league profiles..."
+echo "Compiling prec64.py into single-file binary with bundled assets and league profiles..."
 if command -v pyinstaller &> /dev/null; then
-    pyinstaller --onefile --name prec64 --add-data "leagues:leagues" --clean --noconfirm prec64.py
+    pyinstaller --onefile --name prec64 --add-data "leagues:leagues" --add-data "assets:assets" --clean --noconfirm prec64.py
 else
-    python3 -m PyInstaller --onefile --name prec64 --add-data "leagues:leagues" --clean --noconfirm prec64.py
+    python3 -m PyInstaller --onefile --name prec64 --add-data "leagues:leagues" --add-data "assets:assets" --clean --noconfirm prec64.py
 fi
 
 if [ -f "$SCRIPT_DIR/dist/prec64" ]; then
@@ -28,4 +28,3 @@ if [ -f "$SCRIPT_DIR/dist/prec64" ]; then
     echo "Binary located at: $SCRIPT_DIR/prec64"
     echo "========================================================"
 fi
-

@@ -1,14 +1,14 @@
-# P-REC: Point-of-view Recording External Companion (v1.0.0)
+# P-REC External (v1.0.0)
 ### Zero-Lag, Zero-Warmup Automated Match Recorder for Team Fortress 2 (64-Bit Native)
 
 [![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-blue.svg)](https://github.com/)
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-blue.svg)](#)
 [![TF2 Architecture: 64-bit Native](https://img.shields.io/badge/TF2-64--bit%20Native-orange.svg)](#)
-[![Ruleset: ETF2L / RGL / ozfortress / Matcha / CLTF2](https://img.shields.io/badge/Ruleset-ETF2L%20%7C%20RGL%20%7C%20ozfortress%20%7C%20Matcha%20%7C%20CLTF2-green.svg)](#)
+[![Ruleset: ETF2L / AsiaFortress / RGL / ozfortress / Matcha / CLTF2](https://img.shields.io/badge/Ruleset-ETF2L%20%7C%20AsiaFortress%20%7C%20RGL%20%7C%20ozfortress%20%7C%20Matcha%20%7C%20CLTF2-green.svg)](#)
 [![100% VAC-Safe](https://img.shields.io/badge/VAC-100%25%20Safe-brightgreen.svg)](#)
 [![100% Vibecoded](https://img.shields.io/badge/Codebase-100%25%20Vibecoded-purple.svg)](#)
 [![Dependabot](https://img.shields.io/badge/Dependabot-Enabled-blue.svg)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 ---
 
@@ -23,17 +23,18 @@
 
 ---
 
-## ⚡ Key Advantages (Why Use P-REC?)
+## ⚡ Key Advantages (Why Use P-REC External?)
 
-| Feature | How P-REC Solves It | Predecessors / Alternatives |
+| Feature | How P-REC External Solves It | Predecessors / Alternatives |
 | :--- | :--- | :--- |
 | **0 FPS Impact / Zero Lag** | Runs completely out-of-process via engine network sockets. Touches **0 HUD animation manifests** and draws **0 VGUI panels**. | **PeachREC** runs synchronous animation loops on the main render thread, causing frame pacing jitter and microstutters. |
 | **100% VAC-Safe** | Uses official Source Engine RCON and Netcon protocols. Zero DLL injection, zero memory tampering. | **Original P-REC** cannot run on 64-bit TF2 without `-insecure` (which triggers VAC server bans and league disqualification). |
 | **Zero Warmup Bloat** | Listens to tournament countdown pulses and triggers recording **strictly when the match goes live**. | Valve's **`ds_enable 3`** starts recording the instant you join a server with `mp_tournament 1`, recording 30+ minutes of warmups and roll-calls. |
+| **🔔 Sleek Desktop Pop-ups** | Displays subtle bottom-right toast pop-ups with official TF2 *"That's a wrap!"* art. Uses Windows `WS_EX_NOACTIVATE` so it **never steals keyboard/mouse focus from TF2**. | In-game overlays often trigger Alt-Tab glitches, minimize fullscreen games, or cause input drops. |
 | **⚡ Auto Profile Switching** | Automatically switches active league ruleset when an official tournament config is executed on the server. | Manual reconfiguration required in older tools. |
 | **🎯 Scrim vs. Match Handling** | Automatically differentiates between **practice scrims** (`_scrim` prefix, suppresses screenshot spam) and **official matches** (full compliance & status screenshots). | Other tools take useless status screenshots on every practice round. |
-| **DemoMan Auto-Integration** | Automatically detects [DemoMan](https://github.com/DemomanApp/DemoMan), extracts its RCON password and pre-fills your TF2 `/tf` path! | Zero manual port configuration or password hassle. |
-| **Strict League Compliance** | Dedicated modular rulesets for **ETF2L**, **RGL**, **ozfortress**, **Matcha.tf**, and **CLTF2**. | Automatically captures required SteamID status screenshots (`status; jpeg`) and handles server checks. |
+| **🔍 DemoMan Auto-Detection** | Automatically discovers local [DemoMan](https://github.com/DemomanApp/DemoMan) installations, extracts its active RCON password and pre-fills your TF2 `/tf` path! | Zero manual port configuration or password hassle. |
+| **Strict League Compliance** | Dedicated modular rulesets for **ETF2L**, **AsiaFortress**, **RGL**, **ozfortress**, **Matcha.tf**, and **CLTF2**. | Automatically captures required SteamID status screenshots (`status; jpeg`) and handles server checks. |
 | **Crash & Reconnect Recovery** | Detects active tournament rounds if you crash and reconnect mid-match, resuming recording immediately. | Complies strictly with [ETF2L Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos). Built-in TF2 recording fails to resume if you reconnect. |
 | **Auto-Booting with TF2** | Seamless Steam launch option wrapper launches the recorder automatically whenever you click "Play" in Steam. | Never forget to record an official match again. |
 | **Centralized `tf/custom/` Install** | Installs cleanly into `tf/custom/P-REC/` for one-stop file management alongside your HUD and configs. | Keeps all your competitive files neatly organized in one folder. |
@@ -42,43 +43,57 @@
 
 ## 💡 Classic P-REC Acronym Expansions (Name Ideas)
 
-If you are looking for creative interpretations of the classic **P-REC** name:
+Keeping faith with the classic **P-REC** heritage:
 
-1. **P-REC: Precision Recording Engine for Competition** *(Accurate, professional, focuses on sub-tick live countdown timing)*
-2. **P-REC: Point-of-view Recording External Companion** *(Descriptive of its non-intrusive, zero-injection architecture)*
-3. **P-REC: Peach-Replacement External Companion** *(Community tongue-in-cheek nod to replacing PeachREC's stuttery HUD loops)*
-4. **P-REC: Perfect Recording for Esports & Competition** *(Focuses on tournament compliance and ruleset integrity)*
-5. **P-REC: Pure Recording External Client** *(Nods to running on pure VAC-secured TF2 without `-insecure`)*
-6. **P-REC: Painless Recording for Every Competition** *(Emphasizes automatic league switching, auto-RCON, and zero setup pain)*
-7. **P-REC: Performance Recording & Esports Companion** *(Highlights zero FPS impact)*
+1. **P-REC External: Precision Recording Engine for Competition** *(Accurate, professional, focuses on sub-tick live countdown timing)*
+2. **P-REC External: Point-of-view Recording External Companion** *(Descriptive of its non-intrusive, zero-injection architecture)*
+3. **P-REC External: Peach-Replacement External Companion** *(Community tongue-in-cheek nod to replacing PeachREC's stuttery HUD loops)*
+4. **P-REC External: Perfect Recording for Esports & Competition** *(Focuses on tournament compliance and ruleset integrity)*
+5. **P-REC External: Pure Recording External Client** *(Nods to running on pure VAC-secured TF2 without `-insecure`)*
+6. **P-REC External: Painless Recording for Every Competition** *(Emphasizes automatic league switching, auto-RCON, and zero setup pain)*
+7. **P-REC External: Performance Recording & Esports Companion** *(Highlights zero FPS impact)*
+
+---
+
+## 🔔 Sleek Bottom-Right Desktop Notifications
+
+P-REC External features non-intrusive desktop toast notifications in the bottom-right corner of your screen:
+* Features the classic TF2 achievement icon: **"That's a wrap!"** (`assets/thats_a_wrap.png`).
+* **Zero-Focus Steal (`WS_EX_NOACTIVATE`):** Implemented via native Windows APIs to guarantee TF2 retains 100% active mouse and keyboard focus even during high-intensity 1v1 fights.
+* Alerts you when:
+  * Recording starts or stops.
+  * A bookmark is placed.
+  * A tournament config executes and auto-switches your league profile.
+  * P-REC connects to your TF2 instance.
+* Can be toggled anytime with `prec_popup 1` / `prec_popup 0` in `PREC_Settings.cfg`.
 
 ---
 
 ## ⚡ Dynamic Profile Switching & Scrim Mode
 
 ### 1. Automatic League Switching
-When connected to a competitive server, P-REC inspects console output for executed tournament configs. If the server executes an ETF2L config, RGL config, ozfortress config, Matcha config, or CLTF2 config, P-REC **dynamically switches its active league profile** on the fly without restarting:
+When connected to a competitive server, P-REC External inspects console output for executed tournament configs. If the server executes an ETF2L config, AsiaFortress config, RGL config, ozfortress config, Matcha config, or CLTF2 config, P-REC External **dynamically switches its active league profile** on the fly without restarting:
 ```text
-[P-REC] ⚡ AUTO-SWITCHED LEAGUE PROFILE: Recreational Gamers League (RGL.gg) [OFFICIAL MATCH]
-[P-REC] Triggered by config execution: rgl_6s_5cp.cfg
+[P-REC] ⚡ AUTO-SWITCHED LEAGUE PROFILE: AsiaFortress (AsiaFortress Cup & League) [OFFICIAL MATCH]
+[P-REC] Triggered by config execution: af_6v6_5cp.cfg
 ```
 
 ### 2. Scrim Mode vs. Official Match Mode
-Competitive players spend hours scrimming before tournament matches. P-REC distinguishes between practice scrims and official league games:
+Competitive players spend hours scrimming before tournament matches. P-REC External distinguishes between practice scrims and official league games:
 * **Official Match Mode:**
-  * Demos named with official league prefix (e.g., `etf2l_`, `rgl_`, `ozf_`).
-  * Mandatory status & scoreboard screenshots (`status; jpeg`) captured at match completion (mandated by ETF2L Rule 2.1).
+  * Demos named with official league prefix (e.g., `etf2l_`, `af_`, `rgl_`, `ozf_`).
+  * Mandatory status & scoreboard screenshots (`status; jpeg`) captured at match completion (mandated by ETF2L Rule 2.1 & AsiaFortress rules).
 * **Scrim Mode:**
-  * Demos automatically tagged with `_scrim` (e.g., `etf2l_scrim_`, `rgl_scrim_`, `ozf_scrim_`).
+  * Demos automatically tagged with `_scrim` (e.g., `etf2l_scrim_`, `af_scrim_`, `rgl_scrim_`, `ozf_scrim_`).
   * **Suppresses mandatory status screenshots** during scrims so your screenshot folder isn't cluttered with 50 practice status checks.
-  * In-game team chat announces: `say_team [P-REC Scrim] Recording started.`
+  * In-game team chat announces: `say_team [PREC Scrim] Recording started.`
 
 ---
 
 ## 🔍 Automatic DemoMan Integration
 
-If you use [DemoMan](https://github.com/DemomanApp/DemoMan), P-REC **automatically pairs with it**:
-* Reads DemoMan's local state to extract its active `rconPassword`.
+If you use [DemoMan](https://github.com/DemomanApp/DemoMan), P-REC External **automatically pairs with it**:
+* Inspects DemoMan's local state storage to extract its active `rconPassword`.
 * Detects your configured TF2 `/tf` path directly from DemoMan's `demoDirs`.
 * Shares RCON port `27969` without conflicts.
 * Automatically pre-fills both settings during the initial setup wizard!
@@ -91,25 +106,32 @@ Competitive leagues enforce strict POV demo recording rules with severe penaltie
 
 ### 1. European TF2 League ([ETF2L Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos))
 * **The Problem:** ETF2L strictly mandates that demos must cover the entire match. If your game crashes or you drop and reconnect mid-game, Valve's built-in `ds_enable 3` will NOT resume recording because the tournament mode wasn't restarted. Furthermore, ETF2L strictly mandates capturing proof of all players' SteamIDs and SourceTV status.
-* **What P-REC Adds:**
+* **What P-REC External Adds:**
   * **Mid-match reconnect recovery:** Detects reconnections and sends `status` to verify match state, immediately resuming recording if the tournament match is in progress.
   * **Automated Status Screenshot:** Automatically triggers `status; jpeg` at match completion, saving the screenshot directly into your demo/screenshot folder with complete SteamID proof.
 
-### 2. RGL.gg ([RGL Rule 1008.5](https://docs.rgl.gg/rules/global/1008/?h=pov+demos#1008_5-pov-and-stv-demos))
+### 2. AsiaFortress ([AsiaFortress Rules](https://docs.google.com/document/d/16D6nGRbq1ZafMtR1uBOfnvC3jJ4K4lPzqbrB6lqDQ74/edit?tab=t.0#heading=h.rdjxx5582d9w))
+* **The Problem:** AsiaFortress rules strictly mandate that all players must record first-person POV demos for all official cup and league matches. Demos must be submitted upon admin request within strict deadlines, and failure to provide POV demos results in round forfeits or match bans.
+* **What P-REC External Adds:**
+  * Automated detection of `af_` tournament configs (`af_6v6_5cp`, `af_6v6_koth`, `af_hl_stopwatch`, etc.).
+  * Applies official `af` prefix (or `af_scrim` prefix during scrims).
+  * Automatically captures status screenshots with SteamIDs at round completion.
+
+### 3. RGL.gg ([RGL Rule 1008.5](https://docs.rgl.gg/rules/global/1008/?h=pov+demos#1008_5-pov-and-stv-demos))
 * **The Problem:** RGL mandates POV demos for all matches and requires them to be kept throughout the season. Accidental demo deletion or missed starts result in penalty points.
-* **What P-REC Adds:**
+* **What P-REC External Adds:**
   * Enforces `ds_autodelete 0` (preventing any automatic deletion).
   * Recognizes official RGL server config patterns (`rgl_6s`, `rgl_hl`, `rgl_7s`, `rgl_pt`) and `"Config Executed"` prints to arm and trigger recording seamlessly.
   * Applies the official `rgl` demo naming prefix.
 
-### 3. ozfortress ([ozfortress POV Guide](https://docs.ozfortress.com/guides/pov_demo_recording/))
+### 4. ozfortress ([ozfortress POV Guide](https://docs.ozfortress.com/guides/pov_demo_recording/))
 * **The Problem:** ozfortress servers run a server-side **Demo Checker** plugin (`sm_querycvar`) that queries client cvars upon connection, checking for `ds_enable 2/3` and `ds_autodelete 0`. If `ds_enable 0`, players receive warnings or penalties. However, `ds_enable 3` clutters hard drives with 45 minutes of pre-game warmup bloat.
-* **What P-REC Adds:**
+* **What P-REC External Adds:**
   * Keeps `ds_enable 3` set so your client passes all server-side `sm_querycvar` checks with flying colors.
-  * The split second the live tournament countdown begins, P-REC issues `ds_stop; ds_record` to cleanly split the official match demo from the pre-game warmup!
+  * The split second the live tournament countdown begins, P-REC External issues `ds_stop; ds_record` to cleanly split the official match demo from the pre-game warmup!
 
-### 4. Matcha.tf & CustomLander TF2 ([Matcha Rules](https://rules.matcha.tf/) & [CLTF2 Rule 3.3](https://docs.cltf2.com/))
-* **What P-REC Adds:**
+### 5. Matcha.tf & CustomLander TF2 ([Matcha Rules](https://rules.matcha.tf/) & [CLTF2 Rule 3.3](https://docs.cltf2.com/))
+* **What P-REC External Adds:**
   * Native recognition of Asia/Pacific tournament configs (`matcha_6v6`, `matcha_hl`, `[Matcha]`) and CLTF2 configs (`cltf2_4s`, `cltf2_ultiduo`, `[CLTF2]`).
   * Automates demo naming prefixes (`matcha` / `cltf2`) and end-of-round screenshots for admin verifications.
 
@@ -117,7 +139,7 @@ Competitive leagues enforce strict POV demo recording rules with severe penaltie
 
 ## 🛠️ Interactive Setup & Configuration Auditor
 
-P-REC includes an interactive setup wizard that configures everything in under 60 seconds:
+P-REC External includes an interactive setup wizard that configures everything in under 60 seconds:
 ```bash
 # Run on Windows:
 prec64.exe --install
@@ -174,6 +196,7 @@ cmd /c start "" "C:\path\to\Team Fortress 2\tf\custom\P-REC\prec64.exe" & %comma
 
 All league rules are stored as independent JSON files in the [`leagues/`](leagues/) directory:
 * [`etf2l.json`](leagues/etf2l.json)
+* [`asiafortress.json`](leagues/asiafortress.json)
 * [`rgl.json`](leagues/rgl.json)
 * [`ozfortress.json`](leagues/ozfortress.json)
 * [`matcha.json`](leagues/matcha.json)
@@ -204,7 +227,7 @@ All league rules are stored as independent JSON files in the [`leagues/`](league
      ]
    }
    ```
-3. Open a **Pull Request** on this repository! Once merged, all players using P-REC worldwide will immediately have native compliance with your league rules!
+3. Open a **Pull Request** on this repository! Once merged, all players using P-REC External worldwide will immediately have native compliance with your league rules!
 
 ---
 
@@ -222,34 +245,23 @@ All league rules are stored as independent JSON files in the [`leagues/`](league
 | Convar / Alias | Default | Description |
 | :--- | :--- | :--- |
 | `prec_version` | `"1.0.0"` | Current configuration version. |
-| `prec_league` | `"etf2l"` | Default league profile (`etf2l`, `rgl`, `ozfortress`, `matcha`, `cltf2`, `custom`). Automatically switches when match configs execute. |
+| `prec_league` | `"etf2l"` | Default league profile (`etf2l`, `asiafortress`, `rgl`, `ozfortress`, `matcha`, `cltf2`, `custom`). Automatically switches when match configs execute. |
 | `prec_mode` | `2` | `0` = Off, `1` = Custom named only, `2` = Record active tournament matches only, `3` = Record all matches. |
 | `prec_dir` | `"demos"` | Folder inside `/tf/` where demo files are saved. |
 | `prec_sound` | `1` | `1` = Audio cue on start/stop, `0` = Mute. |
-| `prec_screens` | `1` | `1` = Capture status & scoreboard screenshot at match end (mandatory for ETF2L). Automatically suppressed during scrims. |
+| `prec_popup` | `1` | `1` = Show sleek bottom-right desktop notification, `0` = Off. |
+| `prec_screens` | `1` | `1` = Capture status & scoreboard screenshot at match end. Automatically suppressed during scrims. |
 | `prec_notify` | `1` | `0` = Console only, `1` = Team chat announcements, `2` = HUD notification. |
 | `prec_delete_useless_demo` | `0` | `0` = Never delete (strictly required for league compliance). |
 | `prec_tag` | `""` | Custom prefix tag for demo names (leave blank for league default). |
-| `alias pr_message_start` | `say_team [P-REC] Recording started.` | Chat message sent when recording begins. |
-| `alias pr_message_stop` | `say_team [P-REC] Stop recording.` | Chat message sent when recording ends. |
-| `alias pr_message_mark` | `say_team [P-REC] Bookmark placed.` | Chat message sent when a bookmark is placed. |
+| `alias pr_message_start` | `say_team [PREC] Recording started.` | Chat message sent when recording begins. |
+| `alias pr_message_stop` | `say_team [PREC] Stop recording.` | Chat message sent when recording ends. |
+| `alias pr_message_mark` | `say_team [PREC] Bookmark placed.` | Chat message sent when a bookmark is placed. |
 
 ---
 
-## 🏗️ Building from Source
+## 📜 License & Liability Disclaimer
 
-### Windows:
-```cmd
-build_windows.bat
-```
-*(Uses PyInstaller to compile `prec64.exe` with bundled `leagues` profiles).*
-
-### Linux:
-```bash
-chmod +x build_linux.sh
-./build_linux.sh
-```
-*(Uses PyInstaller to compile standalone `prec64` ELF binary).*
-
-### Automated CI/CD:
-Pushing a git tag (e.g. `v1.0.0`) automatically triggers [.github/workflows/build.yml](.github/workflows/build.yml) on GitHub Actions to compile standalone binaries for both Windows and Linux!
+This software is released under the **GNU General Public License v3.0 (GPL-3.0)**.
+* **Copyleft Requirement:** Any modifications, derivative works, or distributions must also remain free, open source, and licensed under GPL-3.0.
+* **Liability Disclaimer (GPL-3.0 Sections 15 & 16):** The software is provided "as is", without warranty of any kind, express or implied. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from the use of this software.

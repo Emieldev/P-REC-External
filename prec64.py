@@ -38,9 +38,9 @@ import secrets
 import subprocess
 from pathlib import Path
 
-APP_NAME = "P-REC"
+APP_NAME = "P-REC External"
 APP_VERSION = "1.0.0"
-APP_FULL_TITLE = f"P-REC: Point-of-view Recording External Companion v{APP_VERSION}"
+APP_FULL_TITLE = f"P-REC External v{APP_VERSION}"
 DEFAULT_CONFIG_FILES = ["PREC_Settings.cfg", "Settings.cfg"]
 
 # ====================================================================
@@ -64,6 +64,28 @@ DEFAULT_LEAGUE_PROFILES = {
             r"etf2l_(6v6|9v9|golden_cap|ultiduo|bball|scrim)",
             r"ETF2L config",
             r"config has been loaded"
+        ],
+        "chat_triggers": [
+            r"Both teams are ready",
+            r"Match is LIVE",
+            r"All players are ready"
+        ]
+    },
+    "asiafortress": {
+        "id": "asiafortress",
+        "name": "AsiaFortress (AF)",
+        "rules_url": "https://docs.google.com/document/d/16D6nGRbq1ZafMtR1uBOfnvC3jJ4K4lPzqbrB6lqDQ74/edit?tab=t.0#heading=h.rdjxx5582d9w",
+        "prefix": "af",
+        "scrim_prefix": "af_scrim",
+        "ds_enable": 0,
+        "ds_autodelete": 0,
+        "ds_screens": 1,
+        "mandatory_status_screenshot": True,
+        "server_demo_checker_bypass": False,
+        "server_config_patterns": [
+            r"af_(6v6|5cp|koth|golden_cap|scrim)",
+            r"asiafortress.*",
+            r"AsiaFortress"
         ],
         "chat_triggers": [
             r"Both teams are ready",
@@ -219,6 +241,7 @@ class PrecConfig:
         self.prec_mode = 2                # 0=off, 1=custom, 2=tournament live, 3=all
         self.prec_dir = "demos"
         self.prec_sound = 1
+        self.prec_popup = 1               # 1=bottom-right popup toast notification, 0=off
         self.prec_screens = 1             # Status & scoreboard screenshot on round/match end
         self.prec_notify = 1
         self.prec_min_streak = 3
@@ -282,6 +305,8 @@ class PrecConfig:
                     self.prec_dir = val
                 elif key in ("prec_sound", "sound"):
                     self.prec_sound = int(val)
+                elif key in ("prec_popup", "popup"):
+                    self.prec_popup = int(val)
                 elif key in ("prec_screens", "screens"):
                     self.prec_screens = int(val)
                 elif key in ("prec_notify", "notify"):
@@ -359,6 +384,7 @@ prec_league              "etf2l"
 prec_mode                2
 prec_dir                 "demos"
 prec_sound               1
+prec_popup               1
 prec_screens             1
 prec_notify              1
 prec_min_streak          3
@@ -925,6 +951,7 @@ prec_league              "{league}"
 prec_mode                2      // 2 = Record active tournament matches only
 prec_dir                 "demos"// Subfolder in /tf/ for recorded demos
 prec_sound               1      // Sound cue on start/stop
+prec_popup               1      // Bottom-right desktop toast notification on match/record events
 prec_screens             1      // Screenshot of status & scoreboard at match end
 prec_notify              1      // 1 = team chat start/stop announcement
 
@@ -1105,6 +1132,97 @@ class ConsoleLogTailer:
 
 
 # ====================================================================
+# Desktop Bottom-Right Toast Notification
+# ====================================================================
+
+def get_icon_path():
+    """Locates thats_a_wrap.png in assets folder or bundled PyInstaller folder."""
+    dirs = [
+        get_app_dir() / "assets",
+        Path.cwd() / "assets",
+        get_app_dir(),
+        Path.cwd(),
+    ]
+    if getattr(sys, '_MEIPASS', None):
+        dirs.insert(0, Path(sys._MEIPASS) / "assets")
+        dirs.insert(0, Path(sys._MEIPASS))
+    for d in dirs:
+        cand = d / "thats_a_wrap.png"
+        if cand.exists():
+            return cand
+    return None
+
+
+def show_toast(title, subtitle, detail="", duration_ms=3500):
+    """
+    Displays a sleek, dark-mode toast notification in the bottom-right corner of the desktop.
+    Uses WS_EX_NOACTIVATE on Windows to ensure it never steals keyboard/mouse focus from TF2.
+    Runs on a daemon background thread so it never blocks the recording engine.
+    """
+    def _run():
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+            root.overrideredirect(True)
+            root.attributes("-topmost", True)
+            root.configure(bg="#181a1b", highlightbackground="#e67e22", highlightthickness=1)
+
+            toast_w = 340
+            toast_h = 76
+            sw = root.winfo_screenwidth()
+            sh = root.winfo_screenheight()
+            x = sw - toast_w - 20
+            y = sh - toast_h - 60
+            root.geometry(f"{toast_w}x{toast_h}+{x}+{y}")
+
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    hwnd = ctypes.windll.user32.GetParent(root.winfo_id()) or root.winfo_id()
+                    GWL_EXSTYLE = -20
+                    WS_EX_NOACTIVATE = 0x08000000
+                    WS_EX_TOPMOST = 0x00000008
+                    WS_EX_TOOLWINDOW = 0x00000080
+                    style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW)
+                except Exception:
+                    pass
+
+            frame = tk.Frame(root, bg="#181a1b")
+            frame.pack(fill="both", expand=True, padx=8, pady=6)
+
+            icon_file = get_icon_path()
+            if icon_file:
+                try:
+                    photo = tk.PhotoImage(file=str(icon_file))
+                    icon_lbl = tk.Label(frame, image=photo, bg="#181a1b")
+                    icon_lbl.image = photo
+                    icon_lbl.pack(side="left", padx=(2, 10))
+                except Exception:
+                    pass
+
+            text_frame = tk.Frame(frame, bg="#181a1b")
+            text_frame.pack(side="left", fill="both", expand=True)
+
+            title_lbl = tk.Label(text_frame, text=title, font=("Segoe UI", 9, "bold"), fg="#e67e22", bg="#181a1b", anchor="w")
+            title_lbl.pack(fill="x")
+
+            sub_lbl = tk.Label(text_frame, text=subtitle, font=("Segoe UI", 9, "bold"), fg="#ffffff", bg="#181a1b", anchor="w")
+            sub_lbl.pack(fill="x")
+
+            if detail:
+                det_lbl = tk.Label(text_frame, text=detail, font=("Segoe UI", 8), fg="#95a5a6", bg="#181a1b", anchor="w")
+                det_lbl.pack(fill="x")
+
+            root.after(duration_ms, root.destroy)
+            root.mainloop()
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+# ====================================================================
 # Engine Core & League Rule Enforcer
 # ====================================================================
 
@@ -1210,6 +1328,8 @@ class PrecEngine:
             self.send_cmd(msg)
 
         self.play_sound(is_start=True)
+        if self.cfg.prec_popup:
+            show_toast(APP_NAME, f"Recording Started ({sub_type})", f"{self.active_profile.get('name')} • {reason}")
 
     def stop_recording(self, reason="Match Finished"):
         now = time.time()
@@ -1236,6 +1356,8 @@ class PrecEngine:
             self.send_cmd(msg)
 
         self.play_sound(is_start=False)
+        if self.cfg.prec_popup:
+            show_toast(APP_NAME, "Recording Stopped", f"Saved POV Demo • {reason}")
 
     def send_cmd(self, cmd):
         if not self.sender:
@@ -1278,6 +1400,8 @@ class PrecEngine:
                         print(f"\n[{APP_NAME}] ⚡ AUTO-SWITCHED LEAGUE PROFILE: {prof.get('name')} [{mode_label}]", flush=True)
                         print(f"[{APP_NAME}] Triggered by config execution: {line.strip()}", flush=True)
                         self.apply_league_cvars()
+                        if self.cfg.prec_popup:
+                            show_toast(APP_NAME, f"Switched to {prof.get('name')}", f"Mode: {mode_label}")
                     return
 
         # Generic scrim config detection (e.g. exec scrim, loading scrim)
@@ -1286,6 +1410,8 @@ class PrecEngine:
                 self.is_scrim = True
                 print(f"\n[{APP_NAME}] ⚡ Switched to SCRIM MODE (Practice Match)", flush=True)
                 self.apply_league_cvars()
+                if self.cfg.prec_popup:
+                    show_toast(APP_NAME, "Switched to Scrim Mode", f"{self.active_profile.get('name')} • Practice Match")
 
         # 2. Active League Chat Triggers (from leagues/*.json)
         for trigger in self.active_profile.get("chat_triggers", []):
@@ -1362,6 +1488,8 @@ class PrecEngine:
                     print(f"\n[CONNECTED] Netcon stream active on port {self.cfg.prec_netcon_port}!", flush=True)
                     self.apply_league_cvars()
                     connected = True
+                    if self.cfg.prec_popup:
+                        show_toast(APP_NAME, "Connected to TF2", f"Monitoring Netcon • {self.active_profile.get('name')}")
                     self._run_netcon_loop(netcon)
                 except Exception:
                     pass
@@ -1375,6 +1503,8 @@ class PrecEngine:
                     print(f"\n[CONNECTED] RCON session active on port {self.cfg.prec_rcon_port} (DemoMan bridge)!", flush=True)
                     self.apply_league_cvars()
                     connected = True
+                    if self.cfg.prec_popup:
+                        show_toast(APP_NAME, "Connected to TF2", f"Monitoring RCON • {self.active_profile.get('name')}")
                     self._run_rcon_loop(rcon)
                 except Exception:
                     pass
