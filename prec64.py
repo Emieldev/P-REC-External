@@ -801,6 +801,33 @@ def acquire_single_instance_lock():
             pass
 
 
+_ctrl_handler_ref = None
+
+
+def setup_console_close_protection():
+    """Intercepts terminal/cmd cross-out (CTRL_CLOSE_EVENT) so clicking 'X' detaches and hides to tray instead of exiting."""
+    global _ctrl_handler_ref
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            PHANDLER_ROUTINE = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+
+            def ctrl_handler(ctrl_type):
+                if ctrl_type in (0, 2):  # CTRL_C_EVENT or CTRL_CLOSE_EVENT
+                    h_con = ctypes.windll.kernel32.GetConsoleWindow()
+                    if h_con:
+                        ctypes.windll.user32.ShowWindow(h_con, 0)  # SW_HIDE
+                    ctypes.windll.kernel32.FreeConsole()
+                    return True
+                return False
+
+            _ctrl_handler_ref = PHANDLER_ROUTINE(ctrl_handler)
+            ctypes.windll.kernel32.SetConsoleCtrlHandler(_ctrl_handler_ref, True)
+        except Exception:
+            pass
+
+
 # ====================================================================
 # Desktop Shortcut Support (Windows .lnk via PowerShell / Linux .desktop)
 # ====================================================================
@@ -2378,7 +2405,7 @@ class WindowsSystemTray:
                     if lparam == WM_RBUTTONUP:
                         show_menu()
                     elif lparam == WM_LBUTTONDBLCLK:
-                        self.open_settings()
+                        self.toggle_console()
                     return 0
                 elif msg == WM_COMMAND:
                     cmd_id = int(wparam) & 0xFFFF
@@ -3319,6 +3346,9 @@ if __name__ == "__main__":
 
     # Ensure single instance to prevent dual-process conflicts
     acquire_single_instance_lock()
+
+    # Intercept console window close so crossing out hides to hidden pictograms
+    setup_console_close_protection()
 
     force_wizard = "--install" in sys.argv or "--setup" in sys.argv
 
