@@ -2717,7 +2717,9 @@ def find_existing_config():
     tf_dir = detect_tf2_directory()
     if tf_dir:
         search_dirs.extend([
+            tf_dir / f"custom/{APP_NAME}/cfg",
             tf_dir / f"custom/{APP_NAME}",
+            tf_dir / "custom/prec64/cfg",
             tf_dir / "custom/prec64",
             tf_dir / "custom",
             tf_dir / "cfg",
