@@ -40,7 +40,7 @@ import urllib.request
 from pathlib import Path
 
 APP_NAME = "P-REC External"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.2"
 APP_FULL_TITLE = f"P-REC External v{APP_VERSION}"
 GITHUB_REPO = "Emieldev/P-REC-External"
 DEFAULT_CONFIG_FILES = ["PREC_Settings.cfg", "Settings.cfg"]
@@ -244,6 +244,7 @@ class PrecConfig:
         self.prec_dir = "demos"
         self.prec_sound = 1
         self.prec_hide_to_tray = 1        # 1=Hide to system tray (hidden pictograms), 0=keep console open
+        self.prec_desktop_shortcut = 1    # 1=Ensure desktop shortcut exists, 0=off
         self.prec_screens = 1             # Status & scoreboard screenshot on round/match end
         self.prec_notify = 1
         self.prec_min_streak = 3
@@ -311,6 +312,8 @@ class PrecConfig:
                     self.prec_popup = int(val)
                 elif key in ("prec_hide_to_tray", "hide_to_tray", "prec_tray"):
                     self.prec_hide_to_tray = int(val)
+                elif key in ("prec_desktop_shortcut", "desktop_shortcut"):
+                    self.prec_desktop_shortcut = int(val)
                 elif key in ("prec_screens", "screens"):
                     self.prec_screens = int(val)
                 elif key in ("prec_notify", "notify"):
@@ -338,22 +341,16 @@ class PrecConfig:
                 elif key in ("prec_tf_path", "tf_path"):
                     self.prec_tf_path = val
 
-        # Auto-detect DemoMan or generate secure password if not set or default
+        # Auto-detect DemoMan or generate secure password in-memory if not set or default
         demoman = detect_demoman_config()
         if not self.prec_rcon_password or self.prec_rcon_password.lower() in ("changeme", "generate", ""):
             if demoman.get("rcon_password"):
                 self.prec_rcon_password = demoman["rcon_password"]
-                self._save_password_to_cfg(self.prec_rcon_password)
-                print(f"[DEMOMAN] Automatically adopted RCON password from DemoMan: {self.prec_rcon_password}", flush=True)
+                print(f"[DEMOMAN] Automatically adopted RCON password from DemoMan in memory: {self.prec_rcon_password}", flush=True)
             else:
                 generated_pw = secrets.token_hex(6)
                 self.prec_rcon_password = generated_pw
-                self._save_password_to_cfg(generated_pw)
-                print("\n" + "=" * 65, flush=True)
-                print(" [SECURITY] Generated new secure RCON password: " + generated_pw, flush=True)
-                print(f" Updated {self.cfg_path.name} automatically.", flush=True)
-                print(f" Ensure your Steam launch option has: +rcon_password {generated_pw}", flush=True)
-                print("=" * 65 + "\n", flush=True)
+                print(f"[SECURITY] Using temporary session RCON password in memory: {generated_pw}", flush=True)
 
         if not self.prec_tf_path and demoman.get("tf_path"):
             self.prec_tf_path = str(demoman["tf_path"].resolve())
@@ -361,21 +358,7 @@ class PrecConfig:
         print(f"[CONFIG] Loaded configuration from {self.cfg_path.resolve()}", flush=True)
         print(f"         League Profile: {self.prec_league.upper()} | Mode: {self.prec_mode} | Connection: {self.prec_connection_mode}", flush=True)
 
-    def _save_password_to_cfg(self, new_pw):
-        if not self.cfg_path.exists():
-            return
-        try:
-            with open(self.cfg_path, "r", encoding="utf-8") as f:
-                content = f.read()
 
-            pattern = r'((?:prec_)?rcon_password\s+)("[^"]*"|\S+)'
-            replacement = f'\\1"{new_pw}"'
-            new_content = re.sub(pattern, replacement, content)
-
-            with open(self.cfg_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
-        except Exception as e:
-            print(f"[CONFIG WARNING] Could not write generated password to cfg: {e}", flush=True)
 
     def _generate_default_cfg(self):
         default_content = """// ====================================================================
@@ -621,6 +604,133 @@ Comment=TF2 Automated Match Recorder
 
 
 # ====================================================================
+# Desktop Shortcut Support (Windows .lnk via PowerShell / Linux .desktop)
+# ====================================================================
+
+def get_desktop_path() -> Path:
+    """Returns the user's Desktop directory across Windows and Linux."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            # CSIDL_DESKTOP = 0
+            ctypes.windll.shell32.SHGetFolderPathW(None, 0, None, 0, buf)
+            if buf.value:
+                return Path(buf.value)
+        except Exception:
+            pass
+        userprofile = os.environ.get("USERPROFILE")
+        if userprofile and (Path(userprofile) / "Desktop").exists():
+            return Path(userprofile) / "Desktop"
+        return Path.home() / "Desktop"
+    else:
+        return Path.home() / "Desktop"
+
+
+def get_desktop_shortcut_path() -> Path:
+    """Returns the expected Desktop shortcut file path."""
+    desktop = get_desktop_path()
+    if sys.platform == "win32":
+        return desktop / "P-REC External.lnk"
+    else:
+        return desktop / "prec64.desktop"
+
+
+def create_desktop_shortcut(target_exe: Path = None) -> bool:
+    """Creates a desktop shortcut for P-REC External with embedded icon and working directory."""
+    if not target_exe:
+        if getattr(sys, 'frozen', False):
+            target_exe = Path(sys.executable).resolve()
+        else:
+            target_exe = Path(__file__).resolve()
+
+    desktop_path = get_desktop_path()
+    try:
+        desktop_path.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    shortcut_file = get_desktop_shortcut_path()
+
+    # Locate application icon
+    icon_candidate = None
+    app_dir = get_app_dir()
+    for cand in (
+        app_dir / "assets" / "supreme_soviet.ico",
+        target_exe.parent / "assets" / "supreme_soviet.ico",
+        Path(__file__).parent / "assets" / "supreme_soviet.ico" if "__file__" in globals() else None,
+    ):
+        if cand and cand.exists():
+            icon_candidate = cand.resolve()
+            break
+
+    if sys.platform == "win32":
+        try:
+            workdir = target_exe.parent.resolve()
+            if target_exe.suffix.lower() == ".py":
+                exe_target = sys.executable
+                arguments = f'"{target_exe.resolve()}"'
+            else:
+                exe_target = str(target_exe.resolve())
+                arguments = ""
+
+            icon_line = f"if (Test-Path '{icon_candidate}') {{ $s.IconLocation = '{icon_candidate}' }}" if icon_candidate else ""
+            arg_line = f"$s.Arguments = '{arguments}'" if arguments else ""
+
+            ps_script = f"""
+$ws = New-Object -ComObject WScript.Shell
+$s = $ws.CreateShortcut('{shortcut_file.resolve()}')
+$s.TargetPath = '{exe_target}'
+{arg_line}
+$s.WorkingDirectory = '{workdir}'
+$s.Description = 'P-REC External - Zero-Lag Match Recorder for TF2'
+{icon_line}
+$s.Save()
+"""
+            res = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script], capture_output=True, text=True)
+            if res.returncode == 0 and shortcut_file.exists():
+                print(f"[SHORTCUT] Desktop shortcut created at: {shortcut_file.resolve()}", flush=True)
+                return True
+            else:
+                print(f"[SHORTCUT] Failed to create shortcut: {res.stderr.strip()}", flush=True)
+                return False
+        except Exception as e:
+            print(f"[SHORTCUT] Error creating shortcut: {e}", flush=True)
+            return False
+    else:
+        # Linux .desktop entry
+        try:
+            exec_str = f'"{target_exe.resolve()}"' if target_exe.suffix.lower() != ".py" else f'{sys.executable} "{target_exe.resolve()}"'
+            icon_str = str(icon_candidate.resolve()) if icon_candidate else ""
+            content = f"""[Desktop Entry]
+Type=Application
+Name=P-REC External
+Comment=Zero-Lag Match Recorder for TF2
+Exec={exec_str}
+Icon={icon_str}
+Terminal=true
+Categories=Game;
+"""
+            with open(shortcut_file, "w", encoding="utf-8") as f:
+                f.write(content)
+            shortcut_file.chmod(0o755)
+            print(f"[SHORTCUT] Linux desktop shortcut created at: {shortcut_file.resolve()}", flush=True)
+            return True
+        except Exception as e:
+            print(f"[SHORTCUT] Error creating Linux desktop shortcut: {e}", flush=True)
+            return False
+
+
+def ensure_desktop_shortcut(target_exe: Path = None) -> bool:
+    """Ensures a desktop shortcut exists; if missing, creates it automatically."""
+    shortcut_path = get_desktop_shortcut_path()
+    if not shortcut_path.exists():
+        return create_desktop_shortcut(target_exe)
+    return True
+
+
+# ====================================================================
 # Conflict Scanner & Auditor (tf/custom and tf/cfg)
 # ====================================================================
 
@@ -739,8 +849,7 @@ def find_target_autoexec(tf_path: Path) -> Path:
 
 def clean_legacy_peachrec_configs(tf_path: Path):
     """
-    Scans tf/cfg/ to comment out conflicting PeachREC lines in any config,
-    without injecting P-REC settings into non-autoexec files.
+    Scans tf/cfg/ to detect conflicting PeachREC lines without modifying any existing cfg files.
     """
     cfg_dir = tf_path / "cfg"
     if not cfg_dir.exists():
@@ -752,10 +861,7 @@ def clean_legacy_peachrec_configs(tf_path: Path):
             with open(p, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             if re.search(r'^\s*exec\s+peachrec', content, re.MULTILINE | re.I):
-                updated = re.sub(r'^(exec\s+peachrec.*)', r'// \1 (disabled for P-REC)', content, flags=re.MULTILINE | re.I)
-                with open(p, "w", encoding="utf-8") as f:
-                    f.write(updated)
-                print(f"[CLEANUP] Disabled legacy PeachREC loop in: {p.relative_to(tf_path)}", flush=True)
+                print(f"[AUDIT] Notice: Legacy 'exec peachrec' found in: {p.relative_to(tf_path)} (leaving file unchanged).", flush=True)
         except Exception:
             pass
 
@@ -1057,50 +1163,83 @@ def run_setup_wizard():
     else:
         target_dir = get_app_dir()
 
-    # 4. Choose League Profile (Modular JSON profiles)
-    discovered_leagues = load_league_profiles(tf_path)
-    print("\nSelect your primary competitive league profile (modular JSON ruleset):", flush=True)
-    league_keys = list(discovered_leagues.keys())
-    for idx, l_key in enumerate(league_keys, 1):
-        l_info = discovered_leagues[l_key]
-        print(f"  [{idx}] {l_info.get('name', l_key.upper())} ({l_key})", flush=True)
+    # 4. Check for existing PREC_Settings.cfg / Settings.cfg to preserve user settings
+    existing_cfg = None
+    for cand_name in DEFAULT_CONFIG_FILES:
+        for cand_dir in (target_dir, get_app_dir(), tf_path / "custom/P-REC", tf_path / "cfg"):
+            cand = cand_dir / cand_name
+            if cand.exists():
+                existing_cfg = cand.resolve()
+                break
+        if existing_cfg:
+            break
 
-    if sys.stdin.isatty():
-        choice = input(f"Enter choice [1-{len(league_keys)}, default 1]: ").strip()
-        try:
-            choice_idx = int(choice) - 1
-            selected_league = league_keys[choice_idx] if 0 <= choice_idx < len(league_keys) else "etf2l"
-        except Exception:
-            selected_league = "etf2l"
+    if existing_cfg:
+        print("=" * 65, flush=True)
+        print(" [EXISTING CONFIGURATION DETECTED]", flush=True)
+        print(f" Found: {existing_cfg}", flush=True)
+        print(" Keeping all your existing settings intact (file will NOT be edited or overwritten).", flush=True)
+        print("=" * 65 + "\n", flush=True)
+        cfg_target = existing_cfg
+        loaded_cfg = PrecConfig(existing_cfg)
+        selected_league = loaded_cfg.prec_league
+        rcon_pw = loaded_cfg.prec_rcon_password
+
+        # Ensure TF2 can locate this config if located inside a custom folder
+        if "custom" in [p.lower() for p in existing_cfg.parts]:
+            try:
+                mirror_dir = existing_cfg.parent / "cfg"
+                mirror_dir.mkdir(parents=True, exist_ok=True)
+                mirror_file = mirror_dir / existing_cfg.name
+                if not mirror_file.exists():
+                    shutil.copy2(existing_cfg, mirror_file)
+            except Exception:
+                pass
     else:
-        selected_league = "etf2l"
-    print(f"[OK] Selected league: {selected_league.upper()}\n", flush=True)
+        # 4. Choose League Profile (Modular JSON profiles)
+        discovered_leagues = load_league_profiles(tf_path)
+        print("\nSelect your primary competitive league profile (modular JSON ruleset):", flush=True)
+        league_keys = list(discovered_leagues.keys())
+        for idx, l_key in enumerate(league_keys, 1):
+            l_info = discovered_leagues[l_key]
+            print(f"  [{idx}] {l_info.get('name', l_key.upper())} ({l_key})", flush=True)
 
-    # 5. RCON Configuration
-    rcon_pw = ""
-    if demoman.get("rcon_password"):
-        d_pw = demoman["rcon_password"]
-        print(f"[DEMOMAN] Automatically detected DemoMan RCON password: '{d_pw}'", flush=True)
         if sys.stdin.isatty():
-            use_demo = input(f"Adopt DemoMan's password ({d_pw})? [Y/n]: ").strip().lower()
-            if use_demo != 'n':
-                rcon_pw = d_pw
+            choice = input(f"Enter choice [1-{len(league_keys)}, default 1]: ").strip()
+            try:
+                choice_idx = int(choice) - 1
+                selected_league = league_keys[choice_idx] if 0 <= choice_idx < len(league_keys) else "etf2l"
+            except Exception:
+                selected_league = "etf2l"
         else:
-            rcon_pw = d_pw
+            selected_league = "etf2l"
+        print(f"[OK] Selected league: {selected_league.upper()}\n", flush=True)
 
-    if not rcon_pw and sys.stdin.isatty():
-        has_rcon = input("Do you already have an existing RCON password? [y/N]: ").strip().lower()
-        if has_rcon == 'y':
-            rcon_pw = input("Enter your existing RCON password: ").strip()
+        # 5. RCON Configuration
+        rcon_pw = ""
+        if demoman.get("rcon_password"):
+            d_pw = demoman["rcon_password"]
+            print(f"[DEMOMAN] Automatically detected DemoMan RCON password: '{d_pw}'", flush=True)
+            if sys.stdin.isatty():
+                use_demo = input(f"Adopt DemoMan's password ({d_pw})? [Y/n]: ").strip().lower()
+                if use_demo != 'n':
+                    rcon_pw = d_pw
+            else:
+                rcon_pw = d_pw
 
-    if not rcon_pw:
-        rcon_pw = secrets.token_hex(6)
-        print(f"[SECURITY] Generated secure random RCON password: {rcon_pw}", flush=True)
+        if not rcon_pw and sys.stdin.isatty():
+            has_rcon = input("Do you already have an existing RCON password? [y/N]: ").strip().lower()
+            if has_rcon == 'y':
+                rcon_pw = input("Enter your existing RCON password: ").strip()
 
-    # 6. Write PREC_Settings.cfg to target_dir
-    cfg_target = target_dir / "PREC_Settings.cfg"
-    write_wizard_config(cfg_target, selected_league, rcon_pw, str(tf_path.resolve()))
-    print(f"[OK] Configuration saved: {cfg_target.resolve()}", flush=True)
+        if not rcon_pw:
+            rcon_pw = secrets.token_hex(6)
+            print(f"[SECURITY] Generated secure random RCON password: {rcon_pw}", flush=True)
+
+        # 6. Write PREC_Settings.cfg to target_dir (new file only)
+        cfg_target = target_dir / "PREC_Settings.cfg"
+        write_wizard_config(cfg_target, selected_league, rcon_pw, str(tf_path.resolve()))
+        print(f"[OK] Configuration saved: {cfg_target.resolve()}", flush=True)
 
     # 7. Copy binary / script & leagues directory into tf/custom/P-REC if requested
     current_exe = Path(sys.executable) if getattr(sys, 'frozen', False) else get_app_dir() / "prec64.py"
@@ -1157,7 +1296,7 @@ def run_setup_wizard():
         if sys.stdin.isatty():
             ans = input(f"Add optimal P-REC settings to {rel_auto}? [Y/n]: ").strip().lower()
         else:
-            ans = "y"
+            ans = "n" if target_autoexec.exists() else "y"
 
         if ans != "n":
             apply_cfg_update(target_autoexec, cfg_target.name)
@@ -1167,6 +1306,11 @@ def run_setup_wizard():
             show_manual_cfg_instructions(target_autoexec, cfg_target.name, tf_path)
 
     # 9. Auto-Start Configuration
+    if sys.platform == "win32":
+        run_exe = target_dir / ("prec64.exe" if getattr(sys, 'frozen', False) else "prec64.py")
+    else:
+        run_exe = target_dir / "prec64"
+
     if sys.stdin.isatty():
         print("=" * 65, flush=True)
         print(" [SYSTEM STARTUP]", flush=True)
@@ -1175,10 +1319,6 @@ def run_setup_wizard():
         print(f"P-REC External can start silently in the background when {os_label} boots.", flush=True)
         print("This means you never have to remember to launch it manually before playing TF2.", flush=True)
         ans = input(f"Start P-REC External automatically with {os_label}? [Y/n]: ").strip().lower()
-        if sys.platform == "win32":
-            run_exe = target_dir / ("prec64.exe" if getattr(sys, 'frozen', False) else "prec64.py")
-        else:
-            run_exe = target_dir / "prec64"
         if ans in ("", "y", "yes"):
             set_startup(True, run_exe.resolve())
             print(f"[OK] Auto-start enabled! P-REC will start silently on {os_label} boot.\n", flush=True)
@@ -1186,16 +1326,33 @@ def run_setup_wizard():
             set_startup(False)
             print("[INFO] Auto-start not enabled.\n", flush=True)
 
-    # 10. Output Steam Launch Options (Both RCON and Netcon)
+    # 10. Desktop Shortcut Creation
+    print("=" * 65, flush=True)
+    print(" [DESKTOP SHORTCUT]", flush=True)
+    print("=" * 65, flush=True)
+    print("P-REC External can place a shortcut on your Desktop for easy access.", flush=True)
+    if sys.stdin.isatty():
+        ans = input("Create a desktop shortcut for P-REC External? [Y/n]: ").strip().lower()
+        make_shortcut = ans not in ("n", "no")
+    else:
+        make_shortcut = True
+
+    if make_shortcut:
+        if create_desktop_shortcut(run_exe.resolve()):
+            print("[OK] Desktop shortcut created successfully on your Desktop!\n", flush=True)
+        else:
+            print("[INFO] Could not create desktop shortcut.\n", flush=True)
+
+    # 11. Output Steam Launch Options (Both RCON and Netcon)
     print("=" * 65, flush=True)
     print("             SETUP COMPLETE! STEAM LAUNCH OPTIONS:             ", flush=True)
     print("=" * 65, flush=True)
     print("Add EITHER of these to the end of your existing Launch Options", flush=True)
     print("in Steam (Right-click Team Fortress 2 in Steam -> Properties):\n", flush=True)
-    print("▶ Option 1: RCON Mode (Recommended - identical to DemoMan):", flush=True)
+    print("[Option 1: RCON Mode] (Recommended - identical to DemoMan):", flush=True)
     print(f"  -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n", flush=True)
     print("  * If you already run DemoMan, you already have this in Steam!\n", flush=True)
-    print("▶ Option 2: Netcon Mode (Ultra-short, 16 characters):", flush=True)
+    print("[Option 2: Netcon Mode] (Ultra-short, 16 characters):", flush=True)
     print("  -netconport 2121\n", flush=True)
     print("-" * 65, flush=True)
     print("Both options fit directly into Steam's box alongside your existing flags.", flush=True)
@@ -1209,6 +1366,9 @@ def run_setup_wizard():
 
 
 def write_wizard_config(path: Path, league: str, rcon_pw: str, tf_path: str):
+    if path.exists():
+        print(f"[CONFIG] '{path.resolve()}' already exists. Preserving existing settings without overwriting.", flush=True)
+        return
     content = f"""// ====================================================================
 // {APP_FULL_TITLE}
 // ====================================================================
@@ -1227,6 +1387,7 @@ prec_mode                2      // 2 = Record active tournament matches only
 prec_dir                 "demos"// Subfolder in /tf/ for recorded demos
 prec_sound               1      // Audio cue on start/stop
 prec_hide_to_tray        1      // Hide console window to system tray (hidden pictograms)
+prec_desktop_shortcut    1      // 1 = Ensure desktop shortcut exists on Desktop
 prec_screens             1      // Screenshot of status & scoreboard at match end
 prec_notify              1      // 1 = team chat start/stop announcement
 
@@ -1246,12 +1407,26 @@ alias pr_message_mark  "say_team [P-REC] Bookmark placed."
 // Connection Settings
 prec_connection_mode     "auto"
 prec_rcon_port           27969
+rcon_password            "{rcon_pw}"
 prec_rcon_password       "{rcon_pw}"
 prec_netcon_port         2121
 prec_tf_path             "{tf_path}"
 """
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+    # In Source Engine, 'exec' commands strictly search the 'cfg/' directory.
+    # If installed in tf/custom/P-REC, also place a copy in tf/custom/P-REC/cfg/ so TF2 can find it!
+    if "custom" in [p.lower() for p in path.parts]:
+        try:
+            custom_cfg_dir = path.parent / "cfg"
+            custom_cfg_dir.mkdir(parents=True, exist_ok=True)
+            custom_cfg_file = custom_cfg_dir / path.name
+            if not custom_cfg_file.exists():
+                shutil.copy2(path, custom_cfg_file)
+        except Exception:
+            pass
 
 
 # ====================================================================
@@ -1278,11 +1453,21 @@ class SourceRcon:
         s.settimeout(timeout)
         s.connect((self.host, self.port))
         self.sock = s
-        self._send_raw(self.SERVERDATA_AUTH, self.password)
-        resp_id, resp_type, _ = self._read_raw()
-        if resp_type != self.SERVERDATA_AUTH_RESPONSE or resp_id == -1:
-            self.close()
-            raise PermissionError("RCON password rejected by TF2")
+        auth_req_id = self._send_raw(self.SERVERDATA_AUTH, self.password)
+        # Source RCON protocol flow: servers first send an empty SERVERDATA_RESPONSE_VALUE (type 0),
+        # followed immediately by SERVERDATA_AUTH_RESPONSE (type 2).
+        while True:
+            resp_id, resp_type, _ = self._read_raw()
+            if resp_type == self.SERVERDATA_AUTH_RESPONSE:
+                if resp_id == -1 or resp_id != auth_req_id:
+                    self.close()
+                    raise PermissionError("RCON password rejected by TF2")
+                return True
+            elif resp_type == self.SERVERDATA_RESPONSE_VALUE:
+                # Discard initial acknowledgement and wait for AUTH_RESPONSE
+                continue
+            else:
+                break
         return True
 
     def _send_raw(self, packet_type, body):
@@ -1597,7 +1782,8 @@ class WindowsSystemTray:
             ID_SETTINGS = 1005
             ID_CUSTOM_DIR = 1006
             ID_UPDATE = 1007
-            ID_EXIT = 1008
+            ID_SHORTCUT = 1008
+            ID_EXIT = 1009
 
             class NOTIFYICONDATAW(ctypes.Structure):
                 _fields_ = [
@@ -1662,6 +1848,7 @@ class WindowsSystemTray:
 
                 user32.AppendMenuW(h_menu, MF_STRING, ID_SETTINGS, "Go to Settings (PREC_Settings.cfg)")
                 user32.AppendMenuW(h_menu, MF_STRING, ID_CUSTOM_DIR, "Open tf/custom/ Folder")
+                user32.AppendMenuW(h_menu, MF_STRING, ID_SHORTCUT, "Create Desktop Shortcut")
                 user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
                 user32.AppendMenuW(h_menu, MF_STRING, ID_EXIT, f"Close {APP_NAME}")
 
@@ -1698,6 +1885,8 @@ class WindowsSystemTray:
                         self.open_settings()
                     elif cmd_id == ID_CUSTOM_DIR:
                         self.open_custom_folder()
+                    elif cmd_id == ID_SHORTCUT:
+                        create_desktop_shortcut()
                     elif cmd_id == ID_EXIT:
                         self.running = False
                         user32.DestroyWindow(hwnd)
@@ -1798,6 +1987,10 @@ class PrecEngine:
         if getattr(self.cfg, "prec_hide_to_tray", 1) and sys.platform == "win32":
             if not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
                 self.tray.hide_console()
+
+        # Ensure Desktop Shortcut exists if enabled (default=1)
+        if getattr(self.cfg, "prec_desktop_shortcut", 1):
+            ensure_desktop_shortcut()
 
         # Background update check
         def _bg_update_check():
@@ -2302,6 +2495,10 @@ def find_existing_config():
 
 
 if __name__ == "__main__":
+    if any(arg in sys.argv for arg in ("--shortcut", "--create-shortcut")):
+        create_desktop_shortcut()
+        sys.exit(0)
+
     force_wizard = "--install" in sys.argv or "--setup" in sys.argv
 
     if sys.stdin.isatty() and not force_wizard and not any(arg in sys.argv for arg in ("--no-update", "--daemon")):

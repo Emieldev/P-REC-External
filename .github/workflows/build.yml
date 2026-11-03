@@ -62,11 +62,23 @@ jobs:
         with:
           name: prec64-linux
           path: release-assets
+      - name: Determine Release Body
+        id: release_body
+        run: |
+          TAG="${{ github.ref_name }}"
+          BODY_FILE="RELEASE_${TAG}.md"
+          if [ ! -f "$BODY_FILE" ]; then
+            BODY_FILE="RELEASE_NOTES.md"
+          fi
+          if [ ! -f "$BODY_FILE" ]; then
+            BODY_FILE="RELEASE_v1.0.0.md"
+          fi
+          echo "body_file=$BODY_FILE" >> $GITHUB_OUTPUT
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          name: P-REC External v1.0.0 — Zero-Lag Match Recorder for TF2 64-Bit (Windows & Linux)
-          body_path: RELEASE_v1.0.0.md
+          name: P-REC External ${{ github.ref_name }} — Zero-Lag Match Recorder for TF2 64-Bit (Windows & Linux)
+          body_path: ${{ steps.release_body.outputs.body_file }}
           files: |
             release-assets/prec64.exe
             release-assets/prec64
