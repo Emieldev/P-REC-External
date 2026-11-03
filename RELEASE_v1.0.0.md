@@ -87,4 +87,13 @@
 We encourage third-party leagues, tournament organizers, and community developers to contribute:
 * **Add Your League:** Copy `leagues/template.json` to `leagues/<your_league>.json` and open a PR!
 * **Bug Fixes & HUD Integrations:** Feel free to submit pull requests or report issues.
+
+---
+
+## 🙏 Credits & Acknowledgements
+
+* **The Original P-REC:** Huge respect and credit to **Aethelred (Orange)** for creating the original [P-REC](https://github.com/Orange-TF2/p-rec) Source engine plugin that served the competitive TF2 community for over a decade.
+* **PeachREC:** Thanks to **peaches** for [PeachREC](https://github.com/peaches-tf2/PeachREC) and demonstrating the competitive scene's demand for modern automated recording solutions following the 64-bit TF2 update.
+* **DemoMan:** Credit to the [DemoMan](https://github.com/DemomanApp/DemoMan) developers for creating an awesome demo manager and modern TF2 ecosystem tool.
+* **Competitive Leagues:** Respect to ETF2L, AsiaFortress, RGL.gg, ozfortress, Matcha.tf, and CLTF2 for keeping competitive Team Fortress 2 thriving worldwide.
 ```
