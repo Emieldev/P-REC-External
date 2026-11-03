@@ -25,7 +25,8 @@
 * **0 FPS Drop / Zero Microstutters:** Runs 100% externally out-of-process. Zero HUD animation manifest hooks, zero VGUI modifications.
 * **100% VAC-Safe:** Connects to TF2 via official engine sockets. Zero DLL injection or memory tampering.
 * **Zero Warmup Bloat:** Listens to tournament countdown pulses and triggers recording strictly when the match goes live (no more 45-minute warmup demo files from `ds_enable 3`!).
-* **🔔 Sleek Desktop Pop-ups:** Displays bottom-right desktop pop-ups with TF2 *"That's a wrap!"* art. Uses Windows `WS_EX_NOACTIVATE` so it **never steals keyboard/mouse focus from TF2**.
+* **🛡️ Windows System Tray (Hidden Pictograms):** Lives quietly in the notification area under Hidden Pictograms with the TF2 **Supreme Soviet** icon. Right-click to access Settings, Custom folder, toggle console visibility, or Close cleanly!
+* **🔔 Sleek Desktop Pop-ups:** Displays bottom-right desktop pop-ups with TF2 **Supreme Soviet** art. Uses Windows `WS_EX_NOACTIVATE` so it **never steals keyboard/mouse focus from TF2**.
 * **⚡ Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
 * **🔍 DemoMan Auto-Detection:** Automatically discovers local [DemoMan](https://github.com/DemomanApp/DemoMan) installations, extracts its active RCON password and pre-fills your TF2 `/tf` path!
 * **Multi-League Strict Rule Compliance:**
@@ -50,9 +51,9 @@
 
 | File | Platform | Notes |
 | :--- | :--- | :--- |
-| **`prec64.exe`** | **Windows** (64-bit) | Standalone Windows executable. Place in `tf/custom/P-REC/`. |
+| **`prec64.exe`** | **Windows** (64-bit) | Standalone Windows executable with embedded Supreme Soviet icon. Place in `tf/custom/P-REC/`. |
 | **`prec64`** | **Linux** (64-bit) | Standalone Linux ELF binary (`chmod +x prec64`). |
-| **`PREC_Settings.cfg`** | All | Configuration file with convars and chat message aliases. |
+| **`PREC_Settings.cfg`** | All | Configuration file with convars, tray settings, and chat message aliases. |
 | **Source Code (`prec64.py`)** | All | Zero external dependencies; run with `python3 prec64.py`. |
 
 > [!NOTE]

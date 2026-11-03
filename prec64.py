@@ -242,6 +242,7 @@ class PrecConfig:
         self.prec_dir = "demos"
         self.prec_sound = 1
         self.prec_popup = 1               # 1=bottom-right popup toast notification, 0=off
+        self.prec_hide_to_tray = 1        # 1=Hide to system tray (hidden pictograms), 0=keep console open
         self.prec_screens = 1             # Status & scoreboard screenshot on round/match end
         self.prec_notify = 1
         self.prec_min_streak = 3
@@ -307,6 +308,8 @@ class PrecConfig:
                     self.prec_sound = int(val)
                 elif key in ("prec_popup", "popup"):
                     self.prec_popup = int(val)
+                elif key in ("prec_hide_to_tray", "hide_to_tray", "prec_tray"):
+                    self.prec_hide_to_tray = int(val)
                 elif key in ("prec_screens", "screens"):
                     self.prec_screens = int(val)
                 elif key in ("prec_notify", "notify"):
@@ -385,6 +388,7 @@ prec_mode                2
 prec_dir                 "demos"
 prec_sound               1
 prec_popup               1
+prec_hide_to_tray        1
 prec_screens             1
 prec_notify              1
 prec_min_streak          3
@@ -951,7 +955,8 @@ prec_league              "{league}"
 prec_mode                2      // 2 = Record active tournament matches only
 prec_dir                 "demos"// Subfolder in /tf/ for recorded demos
 prec_sound               1      // Sound cue on start/stop
-prec_popup               1      // Bottom-right desktop toast notification on match/record events
+prec_popup               1
+prec_hide_to_tray        1      // Bottom-right desktop toast notification on match/record events
 prec_screens             1      // Screenshot of status & scoreboard at match end
 prec_notify              1      // 1 = team chat start/stop announcement
 
@@ -1135,8 +1140,8 @@ class ConsoleLogTailer:
 # Desktop Bottom-Right Toast Notification
 # ====================================================================
 
-def get_icon_path():
-    """Locates thats_a_wrap.png in assets folder or bundled PyInstaller folder."""
+def get_icon_path(filename="supreme_soviet.png"):
+    """Locates specified asset in assets folder or bundled PyInstaller folder."""
     dirs = [
         get_app_dir() / "assets",
         Path.cwd() / "assets",
@@ -1147,9 +1152,14 @@ def get_icon_path():
         dirs.insert(0, Path(sys._MEIPASS) / "assets")
         dirs.insert(0, Path(sys._MEIPASS))
     for d in dirs:
-        cand = d / "thats_a_wrap.png"
+        cand = d / filename
         if cand.exists():
             return cand
+    for d in dirs:
+        for fallback in ["supreme_soviet.png", "supreme_soviet.ico", "thats_a_wrap.png"]:
+            cand = d / fallback
+            if cand.exists():
+                return cand
     return None
 
 
@@ -1191,10 +1201,13 @@ def show_toast(title, subtitle, detail="", duration_ms=3500):
             frame = tk.Frame(root, bg="#181a1b")
             frame.pack(fill="both", expand=True, padx=8, pady=6)
 
-            icon_file = get_icon_path()
-            if icon_file:
+            icon_file = get_icon_path("supreme_soviet.png")
+            if icon_file and icon_file.suffix.lower() == ".png":
                 try:
                     photo = tk.PhotoImage(file=str(icon_file))
+                    w, h = photo.width(), photo.height()
+                    if w > 64 and h > 64:
+                        photo = photo.subsample(w // 64, h // 64)
                     icon_lbl = tk.Label(frame, image=photo, bg="#181a1b")
                     icon_lbl.image = photo
                     icon_lbl.pack(side="left", padx=(2, 10))
@@ -1223,6 +1236,311 @@ def show_toast(title, subtitle, detail="", duration_ms=3500):
 
 
 # ====================================================================
+# Windows System Tray (Hidden Pictograms / Notification Area)
+# ====================================================================
+
+class WindowsSystemTray:
+    """
+    Manages a native Windows system tray icon in the 'hidden pictograms' (notification area)
+    using Win32 Shell_NotifyIconW and ctypes. Zero external dependencies required.
+    Includes right-click context menu:
+      - Status header (grayed out)
+      - Show / Hide Console Window
+      - Go to Settings (PREC_Settings.cfg)
+      - Open tf/custom/ Folder
+      - Close P-REC External
+    Double-clicking the icon opens PREC_Settings.cfg directly.
+    """
+    def __init__(self, config_path, tf_path="", on_exit_callback=None):
+        self.config_path = str(config_path) if config_path else ""
+        self.tf_path = str(tf_path) if tf_path else ""
+        self.on_exit_callback = on_exit_callback
+        self.status = "Waiting for TF2..."
+        self.hwnd = None
+        self.nid = None
+        self.running = True
+        self.thread = None
+        self.console_visible = True
+
+    def start(self):
+        if sys.platform != "win32":
+            return
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+
+    def update_status(self, new_status: str):
+        self.status = new_status
+        if sys.platform != "win32" or not self.hwnd or not self.nid:
+            return
+        try:
+            import ctypes
+            shell32 = ctypes.windll.shell32
+            tip = f"{APP_NAME} v{APP_VERSION} - {new_status}"
+            self.nid.szTip = tip[:127]
+            self.nid.uFlags = 0x00000004  # NIF_TIP
+            shell32.Shell_NotifyIconW(0x00000001, ctypes.byref(self.nid))  # NIM_MODIFY
+        except Exception:
+            pass
+
+    def open_settings(self):
+        try:
+            target = None
+            if self.config_path and Path(self.config_path).exists():
+                target = Path(self.config_path)
+            else:
+                target = find_existing_config()
+            if target and target.exists():
+                os.startfile(str(target.resolve()))
+            else:
+                print(f"[TRAY] Settings config not found: {self.config_path}", flush=True)
+        except Exception as e:
+            print(f"[TRAY] Error opening settings: {e}", flush=True)
+
+    def open_custom_folder(self):
+        try:
+            target = None
+            if self.tf_path and Path(self.tf_path).exists():
+                target = Path(self.tf_path) / "custom"
+            if not target or not target.exists():
+                det = detect_tf2_directory()
+                if det and (det / "custom").exists():
+                    target = det / "custom"
+            if target and target.exists():
+                os.startfile(str(target.resolve()))
+        except Exception as e:
+            print(f"[TRAY] Error opening custom folder: {e}", flush=True)
+
+    def hide_console(self):
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+                self.console_visible = False
+        except Exception:
+            pass
+
+    def show_console(self):
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                self.console_visible = True
+        except Exception:
+            pass
+
+    def toggle_console(self):
+        if self.console_visible:
+            self.hide_console()
+        else:
+            self.show_console()
+
+    def close(self):
+        self.running = False
+        if sys.platform == "win32" and self.hwnd:
+            try:
+                import ctypes
+                ctypes.windll.user32.PostMessageW(self.hwnd, 0x0010, 0, 0)  # WM_CLOSE
+            except Exception:
+                pass
+
+    def _run_loop(self):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            shell32 = ctypes.windll.shell32
+            kernel32 = ctypes.windll.kernel32
+
+            LRESULT = ctypes.c_longlong
+            user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+            user32.DefWindowProcW.restype = LRESULT
+
+            WM_USER = 0x0400
+            WM_TRAY = WM_USER + 20
+            WM_RBUTTONUP = 0x0205
+            WM_LBUTTONDBLCLK = 0x0203
+            WM_COMMAND = 0x0111
+            WM_DESTROY = 0x0002
+            WM_CLOSE = 0x0010
+            WM_NULL = 0x0000
+
+            NIM_ADD = 0x00000000
+            NIM_MODIFY = 0x00000001
+            NIM_DELETE = 0x00000002
+
+            NIF_MESSAGE = 0x00000001
+            NIF_ICON = 0x00000002
+            NIF_TIP = 0x00000004
+
+            IMAGE_ICON = 1
+            LR_LOADFROMFILE = 0x00000010
+            LR_DEFAULTSIZE = 0x00000040
+
+            MF_STRING = 0x00000000
+            MF_SEPARATOR = 0x00000800
+            MF_GRAYED = 0x00000001
+            TPM_RIGHTBUTTON = 0x0002
+            TPM_BOTTOMALIGN = 0x0020
+
+            ID_STATUS = 1001
+            ID_TOGGLE_CONSOLE = 1002
+            ID_SETTINGS = 1003
+            ID_CUSTOM_DIR = 1004
+            ID_EXIT = 1005
+
+            class NOTIFYICONDATAW(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("hWnd", wintypes.HWND),
+                    ("uID", wintypes.UINT),
+                    ("uFlags", wintypes.UINT),
+                    ("uCallbackMessage", wintypes.UINT),
+                    ("hIcon", wintypes.HICON),
+                    ("szTip", wintypes.WCHAR * 128),
+                    ("dwState", wintypes.DWORD),
+                    ("dwStateMask", wintypes.DWORD),
+                    ("szInfo", wintypes.WCHAR * 256),
+                    ("uTimeoutOrVersion", wintypes.UINT),
+                    ("szInfoTitle", wintypes.WCHAR * 64),
+                    ("dwInfoFlags", wintypes.DWORD),
+                ]
+
+            WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+
+            class WNDCLASSEXW(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.UINT),
+                    ("style", wintypes.UINT),
+                    ("lpfnWndProc", WNDPROC),
+                    ("cbClsExtra", ctypes.c_int),
+                    ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", wintypes.HINSTANCE),
+                    ("hIcon", wintypes.HICON),
+                    ("hCursor", wintypes.HICON),
+                    ("hbrBackground", wintypes.HBRUSH),
+                    ("lpszMenuName", wintypes.LPCWSTR),
+                    ("lpszClassName", wintypes.LPCWSTR),
+                    ("hIconSm", wintypes.HICON),
+                ]
+
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+            h_inst = kernel32.GetModuleHandleW(None)
+            class_name = f"PREC_Tray_Class_{os.getpid()}"
+
+            def show_menu():
+                h_menu = user32.CreatePopupMenu()
+                status_header = f"{APP_NAME} ({self.status})"
+                user32.AppendMenuW(h_menu, MF_STRING, ID_STATUS, status_header)
+                user32.EnableMenuItem(h_menu, ID_STATUS, MF_GRAYED)
+                user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
+
+                console_label = "Hide Console Window" if self.console_visible else "Show Console Window"
+                user32.AppendMenuW(h_menu, MF_STRING, ID_TOGGLE_CONSOLE, console_label)
+                user32.AppendMenuW(h_menu, MF_STRING, ID_SETTINGS, "Go to Settings (PREC_Settings.cfg)")
+                user32.AppendMenuW(h_menu, MF_STRING, ID_CUSTOM_DIR, "Open tf/custom/ Folder")
+                user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
+                user32.AppendMenuW(h_menu, MF_STRING, ID_EXIT, f"Close {APP_NAME}")
+
+                pt = POINT()
+                user32.GetCursorPos(ctypes.byref(pt))
+                user32.SetForegroundWindow(self.hwnd)
+                user32.TrackPopupMenu(h_menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, self.hwnd, None)
+                user32.PostMessageW(self.hwnd, WM_NULL, 0, 0)
+                user32.DestroyMenu(h_menu)
+
+            def wnd_proc(hwnd, msg, wparam, lparam):
+                if msg == WM_TRAY:
+                    if lparam == WM_RBUTTONUP:
+                        show_menu()
+                    elif lparam == WM_LBUTTONDBLCLK:
+                        self.open_settings()
+                    return 0
+                elif msg == WM_COMMAND:
+                    cmd_id = wintypes.LOWORD(wparam)
+                    if cmd_id == ID_TOGGLE_CONSOLE:
+                        self.toggle_console()
+                    elif cmd_id == ID_SETTINGS:
+                        self.open_settings()
+                    elif cmd_id == ID_CUSTOM_DIR:
+                        self.open_custom_folder()
+                    elif cmd_id == ID_EXIT:
+                        self.running = False
+                        user32.DestroyWindow(hwnd)
+                        if self.on_exit_callback:
+                            self.on_exit_callback()
+                        else:
+                            os._exit(0)
+                    return 0
+                elif msg == WM_CLOSE:
+                    user32.DestroyWindow(hwnd)
+                    return 0
+                elif msg == WM_DESTROY:
+                    if self.nid:
+                        shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self.nid))
+                    user32.PostQuitMessage(0)
+                    return 0
+                return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+            self._wnd_proc = WNDPROC(wnd_proc)
+
+            wc = WNDCLASSEXW()
+            wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+            wc.lpfnWndProc = self._wnd_proc
+            wc.hInstance = h_inst
+            wc.lpszClassName = class_name
+            user32.RegisterClassExW(ctypes.byref(wc))
+
+            self.hwnd = user32.CreateWindowExW(
+                0, class_name, "P-REC Tray",
+                0, 0, 0, 0, 0,
+                None, None, h_inst, None
+            )
+
+            ico_file = get_icon_path("supreme_soviet.ico")
+            h_icon = None
+            if ico_file:
+                h_icon = user32.LoadImageW(None, str(ico_file), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE)
+            if not h_icon:
+                h_icon = user32.LoadIconW(None, 32512)
+
+            self.nid = NOTIFYICONDATAW()
+            self.nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
+            self.nid.hWnd = self.hwnd
+            self.nid.uID = 1
+            self.nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+            self.nid.uCallbackMessage = WM_TRAY
+            self.nid.hIcon = h_icon
+            tip = f"{APP_NAME} v{APP_VERSION} - {self.status}"
+            self.nid.szTip = tip[:127]
+
+            shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.nid))
+
+            msg = wintypes.MSG()
+            while self.running and user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+        except Exception as e:
+            print(f"[TRAY] System tray error: {e}", flush=True)
+        finally:
+            if self.nid and sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.shell32.Shell_NotifyIconW(0x00000002, ctypes.byref(self.nid))
+                except Exception:
+                    pass
+
+
+# ====================================================================
 # Engine Core & League Rule Enforcer
 # ====================================================================
 
@@ -1241,6 +1559,30 @@ class PrecEngine:
         self.profiles = load_league_profiles(self.cfg.prec_tf_path)
         league_id = self.cfg.prec_league.lower()
         self.active_profile = self.profiles.get(league_id, self.profiles.get("custom", {}))
+
+        # Windows System Tray
+        self.tray = WindowsSystemTray(
+            config_path=self.cfg.cfg_path,
+            tf_path=self.cfg.prec_tf_path,
+            on_exit_callback=self.stop_all
+        )
+        self.tray.start()
+
+        # Hide console to system tray (hidden pictograms) if configured
+        if getattr(self.cfg, "prec_hide_to_tray", 1) and sys.platform == "win32":
+            if not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
+                self.tray.hide_console()
+
+    def stop_all(self):
+        print(f"\n[{APP_NAME}] Exit requested from System Tray. Shutting down...", flush=True)
+        if self.is_recording:
+            try:
+                self.stop_recording("User Exit")
+            except Exception:
+                pass
+        if self.tray:
+            self.tray.close()
+        os._exit(0)
 
     def apply_league_cvars(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
@@ -1328,6 +1670,8 @@ class PrecEngine:
             self.send_cmd(msg)
 
         self.play_sound(is_start=True)
+        if hasattr(self, "tray") and self.tray:
+            self.tray.update_status(f"Recording ({sub_type})")
         if self.cfg.prec_popup:
             show_toast(APP_NAME, f"Recording Started ({sub_type})", f"{self.active_profile.get('name')} • {reason}")
 
@@ -1356,6 +1700,8 @@ class PrecEngine:
             self.send_cmd(msg)
 
         self.play_sound(is_start=False)
+        if hasattr(self, "tray") and self.tray:
+            self.tray.update_status("Connected to TF2")
         if self.cfg.prec_popup:
             show_toast(APP_NAME, "Recording Stopped", f"Saved POV Demo • {reason}")
 
@@ -1400,6 +1746,8 @@ class PrecEngine:
                         print(f"\n[{APP_NAME}] ⚡ AUTO-SWITCHED LEAGUE PROFILE: {prof.get('name')} [{mode_label}]", flush=True)
                         print(f"[{APP_NAME}] Triggered by config execution: {line.strip()}", flush=True)
                         self.apply_league_cvars()
+                        if hasattr(self, "tray") and self.tray:
+                            self.tray.update_status(f"{prof.get('name')} [{mode_label}]")
                         if self.cfg.prec_popup:
                             show_toast(APP_NAME, f"Switched to {prof.get('name')}", f"Mode: {mode_label}")
                     return
@@ -1488,6 +1836,8 @@ class PrecEngine:
                     print(f"\n[CONNECTED] Netcon stream active on port {self.cfg.prec_netcon_port}!", flush=True)
                     self.apply_league_cvars()
                     connected = True
+                    if hasattr(self, "tray") and self.tray:
+                        self.tray.update_status(f"Connected (Netcon • {self.active_profile.get('name')})")
                     if self.cfg.prec_popup:
                         show_toast(APP_NAME, "Connected to TF2", f"Monitoring Netcon • {self.active_profile.get('name')}")
                     self._run_netcon_loop(netcon)
@@ -1503,6 +1853,8 @@ class PrecEngine:
                     print(f"\n[CONNECTED] RCON session active on port {self.cfg.prec_rcon_port} (DemoMan bridge)!", flush=True)
                     self.apply_league_cvars()
                     connected = True
+                    if hasattr(self, "tray") and self.tray:
+                        self.tray.update_status(f"Connected (RCON • {self.active_profile.get('name')})")
                     if self.cfg.prec_popup:
                         show_toast(APP_NAME, "Connected to TF2", f"Monitoring RCON • {self.active_profile.get('name')}")
                     self._run_rcon_loop(rcon)
@@ -1523,6 +1875,8 @@ class PrecEngine:
                 self.stop_recording("TF2 Closed / Crashed")
             netcon.close()
             self.sender = None
+            if hasattr(self, "tray") and self.tray:
+                self.tray.update_status("Waiting for TF2...")
             print("[IDLE] Waiting for TF2...", flush=True)
 
     def _run_rcon_loop(self, rcon: SourceRcon):
@@ -1550,6 +1904,8 @@ class PrecEngine:
             rcon.close()
             tailer.stop()
             self.sender = None
+            if hasattr(self, "tray") and self.tray:
+                self.tray.update_status("Waiting for TF2...")
             print("[IDLE] Waiting for TF2...", flush=True)
 
 
