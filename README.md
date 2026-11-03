@@ -36,7 +36,7 @@
 | **🔍 DemoMan Auto-Detection** | Automatically discovers local [DemoMan](https://github.com/DemomanApp/DemoMan) installations, extracts its active RCON password and pre-fills your TF2 `/tf` path! | Zero manual port configuration or password hassle. |
 | **Strict League Compliance** | Dedicated modular rulesets for **ETF2L**, **AsiaFortress**, **RGL**, **ozfortress**, **Matcha.tf**, and **CLTF2**. | Automatically captures required SteamID status screenshots (`status; jpeg`) and handles server checks. |
 | **Crash & Reconnect Recovery** | Detects active tournament rounds if you crash and reconnect mid-match, resuming recording immediately. | Complies strictly with [ETF2L Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos). Built-in TF2 recording fails to resume if you reconnect. |
-| **Auto-Booting with TF2** | Seamless Steam launch option wrapper launches the recorder automatically whenever you click "Play" in Steam. | Never forget to record an official match again. |
+| **Silent Background Tray & Auto-Start** | Runs quietly under Hidden Pictograms and can boot with Windows automatically. Hooks into TF2 with just `-netconport 2121`. | Never forget to record an official match again. |
 | **Centralized `tf/custom/` Install** | Installs cleanly into `tf/custom/P-REC/` for one-stop file management alongside your HUD and configs. | Keeps all your competitive files neatly organized in one folder. |
 
 ---
@@ -168,7 +168,7 @@ python3 prec64.py --install
 
 | Platform | Download / Binary | How to Run |
 | :--- | :--- | :--- |
-| **Windows** | `prec64.exe` (Standalone Windows Executable) | Run `prec64.exe` directly or via Steam launch options wrapper. |
+| **Windows** | `prec64.exe` (Standalone Windows Executable) | Run `prec64.exe` directly (silently hides to tray) or enable Start with Windows. |
 | **Linux** | `prec64` (Standalone Linux ELF Binary) or `prec64.py` | `chmod +x prec64 && ./prec64` or `python3 prec64.py` (requires 0 external dependencies!). |
 
 > [!NOTE]
@@ -176,19 +176,27 @@ python3 prec64.py --install
 
 ---
 
-## 🚀 Steam Launch Options & Auto-Boot
+## 🚀 Steam Launch Option (Short & Simple)
 
-Add the following string to your TF2 Launch Options in Steam (**Right-click TF2 -> Properties -> General -> Launch Options**):
+You only need **ONE short parameter** in your TF2 Launch Options in Steam (**Right-click Team Fortress 2 in Steam -> Properties -> General -> Launch Options**):
 
-### Windows Launch Option:
 ```text
-cmd /c start "" "C:\path\to\Team Fortress 2\tf\custom\P-REC\prec64.exe" & %command% -condebug -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
+-netconport 2121
 ```
 
-### Linux Launch Option:
-```text
-/home/user/.local/share/Steam/steamapps/common/Team\ Fortress\ 2/tf/custom/P-REC/prec64 & %command% -condebug -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
-```
+That's literally it! Just **16 characters**.
+
+### How it works:
+1. Run `prec64.exe` (it sits silently in your Windows System Tray under **Hidden Pictograms** with the TF2 Supreme Soviet icon).
+2. Launch Team Fortress 2 from Steam.
+3. P-REC External connects automatically through the local Netcon socket, monitors the match live, and records your tournament demos with zero warmup bloat and full league compliance!
+
+> [!TIP]
+> **Want it to start automatically with your PC?**
+> In the setup wizard (`prec64.exe --install`), enable **Start with Windows**, or right-click the Supreme Soviet tray icon and click **Start with Windows**. P-REC External will launch silently into your hidden tray whenever Windows boots!
+
+### (Optional) DemoMan / Legacy RCON Users
+If you already use [DemoMan](https://github.com/DemomanApp/DemoMan), keep DemoMan's launch options in Steam as they are. P-REC External detects DemoMan automatically and hooks into port 27969 with zero extra setup needed.
 
 ---
 

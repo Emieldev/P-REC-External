@@ -41,7 +41,7 @@
   * Audits `tf/cfg/overrides` and `tf/cfg/`, asking to apply settings file-by-file or in bulk.
   * Auto-generates cryptographically secure RCON passwords (or hooks into DemoMan port `27969`).
 * **Modular League Profiles (`leagues/*.json`):** Third-party leagues can add their own rulesets simply by submitting a Pull Request!
-* **Steam Launch Option Auto-Boot:** Launches seamlessly alongside TF2.
+* **Short 16-Character Launch Option:** Only requires `-netconport 2121` in Steam. Zero messy shell scripts or long passwords!
 * **License:** Licensed under GNU General Public License v3.0 (GPL-3.0) — 100% free forever with complete liability disclaimer.
 
 ---
@@ -65,14 +65,17 @@
 ### Windows:
 1. Download `prec64.exe` and `PREC_Settings.cfg`.
 2. Run `prec64.exe --install` in a terminal/command prompt to run the 60-second setup wizard (or let it launch automatically on first run).
-3. Add the outputted launch options to TF2 in Steam:
+3. Add this single short parameter to TF2 Launch Options in Steam:
    ```text
-   cmd /c start "" "C:\path\to\Team Fortress 2\tf\custom\P-REC\prec64.exe" & %command% -condebug -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
+   -netconport 2121
    ```
+4. Double-click `prec64.exe` (it lives quietly in your system tray under Hidden Pictograms). You can also click "Start with Windows" in the tray menu to never have to launch it again!
 
 ### Linux:
 1. Download `prec64` and `PREC_Settings.cfg`.
 2. Make executable: `chmod +x prec64`
+3. Add `-netconport 2121` to TF2 Launch Options in Steam.
+4. Run `./prec64 &` in the background.
 3. Run `./prec64 --install` to complete setup.
 4. Add launch options to TF2 in Steam:
    ```text

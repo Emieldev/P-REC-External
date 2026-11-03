@@ -534,6 +534,100 @@ def detect_tf2_directory():
 
 
 # ====================================================================
+# Auto-Start Configuration (Windows Startup / Linux Autostart)
+# ====================================================================
+
+def get_startup_paths():
+    """Returns platform-specific autostart paths."""
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        if not appdata:
+            return None, None, None
+        startup_dir = Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+        vbs_path = startup_dir / "prec64_autostart.vbs"
+        bat_path = startup_dir / "prec64.bat"
+        return startup_dir, vbs_path, bat_path
+    else:
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "prec64.desktop"
+        return autostart_dir, desktop_file, None
+
+
+def is_startup_enabled() -> bool:
+    """Checks whether P-REC External is set to start automatically on system boot/login."""
+    if sys.platform == "win32":
+        startup_dir, vbs_path, bat_path = get_startup_paths()
+        if not startup_dir:
+            return False
+        return bool((vbs_path and vbs_path.exists()) or (bat_path and bat_path.exists()))
+    else:
+        autostart_dir, desktop_file, _ = get_startup_paths()
+        return bool(desktop_file and desktop_file.exists())
+
+
+def set_startup(enable: bool, exe_path: Path = None) -> bool:
+    """Enables or disables autostart on system boot/login."""
+    if not exe_path:
+        if getattr(sys, 'frozen', False):
+            exe_path = Path(sys.executable).resolve()
+        else:
+            exe_path = Path(__file__).resolve()
+
+    if sys.platform == "win32":
+        startup_dir, vbs_path, bat_path = get_startup_paths()
+        if not startup_dir or not startup_dir.exists():
+            return False
+        if enable:
+            if bat_path and bat_path.exists():
+                try:
+                    bat_path.unlink()
+                except Exception:
+                    pass
+            # Launch with window style 0 (SW_HIDE) so zero cmd flashes occur on login
+            vbs_content = f'CreateObject("Wscript.Shell").Run """{exe_path}""", 0, False\n'
+            try:
+                with open(vbs_path, "w", encoding="utf-8") as f:
+                    f.write(vbs_content)
+                return True
+            except Exception:
+                return False
+        else:
+            for p in (vbs_path, bat_path):
+                if p and p.exists():
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
+            return True
+    else:
+        autostart_dir, desktop_file, _ = get_startup_paths()
+        if enable:
+            try:
+                autostart_dir.mkdir(parents=True, exist_ok=True)
+                content = f"""[Desktop Entry]
+Type=Application
+Exec="{exe_path}"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name={APP_NAME}
+Comment=TF2 Automated Match Recorder
+"""
+                with open(desktop_file, "w", encoding="utf-8") as f:
+                    f.write(content)
+                return True
+            except Exception:
+                return False
+        else:
+            if desktop_file and desktop_file.exists():
+                try:
+                    desktop_file.unlink()
+                except Exception:
+                    pass
+            return True
+
+
+# ====================================================================
 # Conflict Scanner & Auditor (tf/custom and tf/cfg)
 # ====================================================================
 
@@ -1082,20 +1176,38 @@ def run_setup_wizard():
             for cand in cfg_candidates:
                 show_manual_cfg_instructions(cand, cfg_target.name, tf_path)
 
-    # 9. Output Steam Launch Option
-    print("\n" + "=" * 65, flush=True)
-    print("             SETUP COMPLETE! STEAM LAUNCH OPTIONS:             ", flush=True)
-    print("=" * 65, flush=True)
-    print("Copy and paste this into TF2's Launch Options in Steam:\n", flush=True)
-    if sys.platform == "win32":
-        run_exe = target_dir / ("prec64.exe" if getattr(sys, 'frozen', False) else "prec64.py")
-        if run_exe.suffix == ".exe":
-            print(f'cmd /c start "" "{run_exe.resolve()}" & %command% -condebug -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n', flush=True)
+    # 9. Auto-Start Configuration
+    if sys.stdin.isatty():
+        print("\n" + "=" * 65, flush=True)
+        print(" [SYSTEM STARTUP]", flush=True)
+        print("=" * 65, flush=True)
+        os_label = "Windows" if sys.platform == "win32" else "system login"
+        print(f"P-REC External can start silently in the background when {os_label} boots.", flush=True)
+        print("This means you never have to remember to launch it manually before playing TF2.", flush=True)
+        ans = input(f"Start P-REC External automatically with {os_label}? [Y/n]: ").strip().lower()
+        if sys.platform == "win32":
+            run_exe = target_dir / ("prec64.exe" if getattr(sys, 'frozen', False) else "prec64.py")
         else:
-            print(f'cmd /c start "" python "{run_exe.resolve()}" & %command% -condebug -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n', flush=True)
-    else:
-        run_exe = target_dir / "prec64"
-        print(f'"{run_exe.resolve()}" & %command% -condebug -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n', flush=True)
+            run_exe = target_dir / "prec64"
+        if ans in ("", "y", "yes"):
+            set_startup(True, run_exe.resolve())
+            print(f"[OK] Auto-start enabled! P-REC will start silently on {os_label} boot.\n", flush=True)
+        else:
+            set_startup(False)
+            print("[INFO] Auto-start not enabled.\n", flush=True)
+
+    # 10. Output Steam Launch Option (Short & Simple)
+    print("=" * 65, flush=True)
+    print("             SETUP COMPLETE! STEAM LAUNCH OPTION:              ", flush=True)
+    print("=" * 65, flush=True)
+    print("Add this ONE short parameter to TF2 in Steam:\n", flush=True)
+    print("   -netconport 2121\n", flush=True)
+    print("How to add in Steam:", flush=True)
+    print("  1. In your Steam Library, right-click Team Fortress 2 -> Properties.", flush=True)
+    print("  2. Under 'Launch Options', paste: -netconport 2121", flush=True)
+    print("-" * 65, flush=True)
+    print("That's it! When TF2 launches, P-REC External connects automatically", flush=True)
+    print("with zero lag, zero warmup bloat, and full league compliance.", flush=True)
     print("=" * 65, flush=True)
 
     if sys.stdin.isatty():
@@ -1479,6 +1591,8 @@ class WindowsSystemTray:
             MF_STRING = 0x00000000
             MF_SEPARATOR = 0x00000800
             MF_GRAYED = 0x00000001
+            MF_CHECKED = 0x00000008
+            MF_UNCHECKED = 0x00000000
             TPM_RIGHTBUTTON = 0x0002
             TPM_BOTTOMALIGN = 0x0020
 
@@ -1487,7 +1601,8 @@ class WindowsSystemTray:
             ID_SETTINGS = 1003
             ID_CUSTOM_DIR = 1004
             ID_UPDATE = 1005
-            ID_EXIT = 1006
+            ID_STARTUP = 1006
+            ID_EXIT = 1007
 
             class NOTIFYICONDATAW(ctypes.Structure):
                 _fields_ = [
@@ -1544,6 +1659,10 @@ class WindowsSystemTray:
 
                 console_label = "Hide Console Window" if self.console_visible else "Show Console Window"
                 user32.AppendMenuW(h_menu, MF_STRING, ID_TOGGLE_CONSOLE, console_label)
+
+                startup_flag = MF_CHECKED if is_startup_enabled() else MF_UNCHECKED
+                user32.AppendMenuW(h_menu, MF_STRING | startup_flag, ID_STARTUP, "Start with Windows")
+
                 user32.AppendMenuW(h_menu, MF_STRING, ID_SETTINGS, "Go to Settings (PREC_Settings.cfg)")
                 user32.AppendMenuW(h_menu, MF_STRING, ID_CUSTOM_DIR, "Open tf/custom/ Folder")
                 user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
@@ -1573,6 +1692,8 @@ class WindowsSystemTray:
                                 pass
                     elif cmd_id == ID_TOGGLE_CONSOLE:
                         self.toggle_console()
+                    elif cmd_id == ID_STARTUP:
+                        set_startup(not is_startup_enabled())
                     elif cmd_id == ID_SETTINGS:
                         self.open_settings()
                     elif cmd_id == ID_CUSTOM_DIR:
