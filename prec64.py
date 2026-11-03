@@ -241,7 +241,6 @@ class PrecConfig:
         self.prec_mode = 2                # 0=off, 1=custom, 2=tournament live, 3=all
         self.prec_dir = "demos"
         self.prec_sound = 1
-        self.prec_popup = 1               # 1=bottom-right popup toast notification, 0=off
         self.prec_hide_to_tray = 1        # 1=Hide to system tray (hidden pictograms), 0=keep console open
         self.prec_screens = 1             # Status & scoreboard screenshot on round/match end
         self.prec_notify = 1
@@ -387,7 +386,6 @@ prec_league              "etf2l"
 prec_mode                2
 prec_dir                 "demos"
 prec_sound               1
-prec_popup               1
 prec_hide_to_tray        1
 prec_screens             1
 prec_notify              1
@@ -954,9 +952,8 @@ prec_league              "{league}"
 // Recording Modes & Triggers
 prec_mode                2      // 2 = Record active tournament matches only
 prec_dir                 "demos"// Subfolder in /tf/ for recorded demos
-prec_sound               1      // Sound cue on start/stop
-prec_popup               1
-prec_hide_to_tray        1      // Bottom-right desktop toast notification on match/record events
+prec_sound               1      // Audio cue on start/stop
+prec_hide_to_tray        1      // Hide console window to system tray (hidden pictograms)
 prec_screens             1      // Screenshot of status & scoreboard at match end
 prec_notify              1      // 1 = team chat start/stop announcement
 
@@ -1163,79 +1160,6 @@ def get_icon_path(filename="supreme_soviet.png"):
     return None
 
 
-def show_toast(title, subtitle, detail="", duration_ms=3500):
-    """
-    Displays a sleek, dark-mode toast notification in the bottom-right corner of the desktop.
-    Uses WS_EX_NOACTIVATE on Windows to ensure it never steals keyboard/mouse focus from TF2.
-    Runs on a daemon background thread so it never blocks the recording engine.
-    """
-    def _run():
-        try:
-            import tkinter as tk
-            root = tk.Tk()
-            root.overrideredirect(True)
-            root.attributes("-topmost", True)
-            root.configure(bg="#181a1b", highlightbackground="#e67e22", highlightthickness=1)
-
-            toast_w = 340
-            toast_h = 76
-            sw = root.winfo_screenwidth()
-            sh = root.winfo_screenheight()
-            x = sw - toast_w - 20
-            y = sh - toast_h - 60
-            root.geometry(f"{toast_w}x{toast_h}+{x}+{y}")
-
-            if sys.platform == "win32":
-                try:
-                    import ctypes
-                    hwnd = ctypes.windll.user32.GetParent(root.winfo_id()) or root.winfo_id()
-                    GWL_EXSTYLE = -20
-                    WS_EX_NOACTIVATE = 0x08000000
-                    WS_EX_TOPMOST = 0x00000008
-                    WS_EX_TOOLWINDOW = 0x00000080
-                    style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW)
-                except Exception:
-                    pass
-
-            frame = tk.Frame(root, bg="#181a1b")
-            frame.pack(fill="both", expand=True, padx=8, pady=6)
-
-            icon_file = get_icon_path("supreme_soviet.png")
-            if icon_file and icon_file.suffix.lower() == ".png":
-                try:
-                    photo = tk.PhotoImage(file=str(icon_file))
-                    w, h = photo.width(), photo.height()
-                    if w > 64 and h > 64:
-                        photo = photo.subsample(w // 64, h // 64)
-                    icon_lbl = tk.Label(frame, image=photo, bg="#181a1b")
-                    icon_lbl.image = photo
-                    icon_lbl.pack(side="left", padx=(2, 10))
-                except Exception:
-                    pass
-
-            text_frame = tk.Frame(frame, bg="#181a1b")
-            text_frame.pack(side="left", fill="both", expand=True)
-
-            title_lbl = tk.Label(text_frame, text=title, font=("Segoe UI", 9, "bold"), fg="#e67e22", bg="#181a1b", anchor="w")
-            title_lbl.pack(fill="x")
-
-            sub_lbl = tk.Label(text_frame, text=subtitle, font=("Segoe UI", 9, "bold"), fg="#ffffff", bg="#181a1b", anchor="w")
-            sub_lbl.pack(fill="x")
-
-            if detail:
-                det_lbl = tk.Label(text_frame, text=detail, font=("Segoe UI", 8), fg="#95a5a6", bg="#181a1b", anchor="w")
-                det_lbl.pack(fill="x")
-
-            root.after(duration_ms, root.destroy)
-            root.mainloop()
-        except Exception:
-            pass
-
-    threading.Thread(target=_run, daemon=True).start()
-
-
-# ====================================================================
 # Windows System Tray (Hidden Pictograms / Notification Area)
 # ====================================================================
 
@@ -1672,8 +1596,6 @@ class PrecEngine:
         self.play_sound(is_start=True)
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status(f"Recording ({sub_type})")
-        if self.cfg.prec_popup:
-            show_toast(APP_NAME, f"Recording Started ({sub_type})", f"{self.active_profile.get('name')} • {reason}")
 
     def stop_recording(self, reason="Match Finished"):
         now = time.time()
@@ -1702,8 +1624,6 @@ class PrecEngine:
         self.play_sound(is_start=False)
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status("Connected to TF2")
-        if self.cfg.prec_popup:
-            show_toast(APP_NAME, "Recording Stopped", f"Saved POV Demo • {reason}")
 
     def send_cmd(self, cmd):
         if not self.sender:
@@ -1748,8 +1668,6 @@ class PrecEngine:
                         self.apply_league_cvars()
                         if hasattr(self, "tray") and self.tray:
                             self.tray.update_status(f"{prof.get('name')} [{mode_label}]")
-                        if self.cfg.prec_popup:
-                            show_toast(APP_NAME, f"Switched to {prof.get('name')}", f"Mode: {mode_label}")
                     return
 
         # Generic scrim config detection (e.g. exec scrim, loading scrim)
@@ -1758,8 +1676,8 @@ class PrecEngine:
                 self.is_scrim = True
                 print(f"\n[{APP_NAME}] ⚡ Switched to SCRIM MODE (Practice Match)", flush=True)
                 self.apply_league_cvars()
-                if self.cfg.prec_popup:
-                    show_toast(APP_NAME, "Switched to Scrim Mode", f"{self.active_profile.get('name')} • Practice Match")
+                if hasattr(self, "tray") and self.tray:
+                    self.tray.update_status(f"{self.active_profile.get('name')} [SCRIM]")
 
         # 2. Active League Chat Triggers (from leagues/*.json)
         for trigger in self.active_profile.get("chat_triggers", []):
@@ -1838,8 +1756,6 @@ class PrecEngine:
                     connected = True
                     if hasattr(self, "tray") and self.tray:
                         self.tray.update_status(f"Connected (Netcon • {self.active_profile.get('name')})")
-                    if self.cfg.prec_popup:
-                        show_toast(APP_NAME, "Connected to TF2", f"Monitoring Netcon • {self.active_profile.get('name')}")
                     self._run_netcon_loop(netcon)
                 except Exception:
                     pass
@@ -1855,8 +1771,6 @@ class PrecEngine:
                     connected = True
                     if hasattr(self, "tray") and self.tray:
                         self.tray.update_status(f"Connected (RCON • {self.active_profile.get('name')})")
-                    if self.cfg.prec_popup:
-                        show_toast(APP_NAME, "Connected to TF2", f"Monitoring RCON • {self.active_profile.get('name')}")
                     self._run_rcon_loop(rcon)
                 except Exception:
                     pass
