@@ -82,3 +82,4 @@ We encourage third-party leagues, tournament organizers, and community developer
 * **Add Your League:** Copy `leagues/template.json` to `leagues/<your_league>.json` and open a PR!
 * **Bug Fixes & HUD Integrations:** Feel free to submit pull requests or report issues.
 ```
+

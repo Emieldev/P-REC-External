@@ -4,6 +4,7 @@
   "rules_url": "https://example.com/rules",
   "config_repo": "https://github.com/my-org/server-configs",
   "prefix": "myleague",
+  "scrim_prefix": "myleague_scrim",
   "ds_enable": 0,
   "ds_autodelete": 0,
   "ds_screens": 1,
@@ -17,3 +18,4 @@
     "Match is LIVE"
   ]
 }
+

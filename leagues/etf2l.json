@@ -4,12 +4,13 @@
   "rules_url": "https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos",
   "config_repo": "https://github.com/ETF2L/gameserver-configs",
   "prefix": "etf2l",
+  "scrim_prefix": "etf2l_scrim",
   "ds_enable": 0,
   "ds_autodelete": 0,
   "ds_screens": 1,
   "mandatory_status_screenshot": true,
   "server_config_patterns": [
-    "etf2l_(6v6|9v9|golden_cap|ultiduo|bball)",
+    "etf2l_(6v6|9v9|golden_cap|ultiduo|bball|scrim)",
     "ETF2L config",
     "config has been loaded"
   ],
