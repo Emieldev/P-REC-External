@@ -304,9 +304,9 @@ class PrecConfig:
                     self.prec_league = val.lower()
                 elif key in ("prec_mode", "mode"):
                     self.prec_mode = int(val)
-                elif key in ("prec_dir", "dir"):
+                elif key in ("prec_dir", "dir", "ds_dir"):
                     self.prec_dir = val
-                elif key in ("prec_sound", "sound"):
+                elif key in ("prec_sound", "sound", "ds_sound"):
                     self.prec_sound = int(val)
                 elif key in ("prec_popup", "popup"):
                     self.prec_popup = int(val)
@@ -314,17 +314,17 @@ class PrecConfig:
                     self.prec_hide_to_tray = int(val)
                 elif key in ("prec_desktop_shortcut", "desktop_shortcut"):
                     self.prec_desktop_shortcut = int(val)
-                elif key in ("prec_screens", "screens"):
+                elif key in ("prec_screens", "screens", "ds_screens"):
                     self.prec_screens = int(val)
-                elif key in ("prec_notify", "notify"):
+                elif key in ("prec_notify", "notify", "ds_notify"):
                     self.prec_notify = int(val)
-                elif key in ("prec_min_streak", "min_streak"):
+                elif key in ("prec_min_streak", "min_streak", "ds_min_streak"):
                     self.prec_min_streak = int(val)
-                elif key in ("prec_kill_delay", "kill_delay"):
+                elif key in ("prec_kill_delay", "kill_delay", "ds_kill_delay"):
                     self.prec_kill_delay = int(val)
-                elif key in ("prec_log", "log"):
+                elif key in ("prec_log", "log", "ds_log"):
                     self.prec_log = int(val)
-                elif key in ("prec_delete_useless_demo", "delete_useless_demo"):
+                elif key in ("prec_delete_useless_demo", "delete_useless_demo", "ds_autodelete"):
                     self.prec_delete_useless_demo = int(val)
                 elif key in ("prec_stv_status", "stv_status"):
                     self.prec_stv_status = int(val)
