@@ -2087,6 +2087,7 @@ class PrecEngine:
             self.send_cmd('echo "[P-REC External] All systems operational. Match monitoring engaged."')
             self.send_cmd('echo "[P-REC External] ================================================"')
             self.send_cmd('echo ""')
+            self.send_cmd(f'say_team [P-REC] Connection check: SUCCESS! Active League: {prof_name} | Demo Prefix: {self.get_demo_prefix()}')
 
             if hasattr(self, "tray") and self.tray:
                 self.tray.update_status(f"Connected ({mode_upper} • {prof_name}) - OK")
@@ -2166,6 +2167,27 @@ class PrecEngine:
             self.tray.close()
         os._exit(0)
 
+    def get_demo_prefix(self) -> str:
+        """Determines the demo prefix for TF2 Demo Support.
+        Default naming scheme: <mapname>_<date>_<time>.dem
+        (TF2 Demo Support automatically appends <date>_<time> to ds_prefix).
+        """
+        if self.cfg.prec_tag:
+            tag = self.cfg.prec_tag.strip()
+            if "{map}" in tag and self.current_map:
+                tag = tag.replace("{map}", self.current_map)
+            return tag.rstrip("_") + "_"
+
+        # Default scheme: <mapname>_<date>_<time>
+        if self.current_map:
+            if self.is_scrim:
+                return f"{self.current_map}_scrim_"
+            return f"{self.current_map}_"
+
+        # Fallback if map not yet detected
+        fallback = self.active_profile.get("scrim_prefix", "scrim") if self.is_scrim else self.active_profile.get("prefix", "match")
+        return f"{fallback}_"
+
     def apply_league_cvars(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
         mode_label = "SCRIM (Practice)" if self.is_scrim else "OFFICIAL MATCH"
@@ -2192,14 +2214,8 @@ class PrecEngine:
         self.send_cmd(f"ds_kill_delay {self.cfg.prec_kill_delay}")
         self.send_cmd(f"ds_log {self.cfg.prec_log}")
 
-        # Prefix logic: if prec_tag set by user, use that. Otherwise use scrim_prefix or base prefix
-        if self.cfg.prec_tag:
-            prefix = self.cfg.prec_tag
-        elif self.is_scrim:
-            prefix = self.active_profile.get("scrim_prefix", f"{self.active_profile.get('prefix', self.cfg.prec_league)}_scrim")
-        else:
-            prefix = self.active_profile.get("prefix", self.cfg.prec_league)
-
+        # Prefix logic: default <mapname>_<date>_<time>
+        prefix = self.get_demo_prefix()
         if prefix:
             self.send_cmd(f'ds_prefix "{prefix}"')
 
@@ -2247,6 +2263,11 @@ class PrecEngine:
         self.is_recording = True
         sub_type = "Scrim Practice" if self.is_scrim else "Official Match"
         print(f"\n[{APP_NAME}] >>> START RECORDING <<< ({sub_type}: {reason})", flush=True)
+
+        # Ensure latest prefix (with mapname) is applied before recording begins
+        prefix = self.get_demo_prefix()
+        if prefix:
+            self.send_cmd(f'ds_prefix "{prefix}"')
 
         if self.active_profile.get("server_demo_checker_bypass"):
             self.send_cmd("ds_stop; ds_record")
@@ -2308,9 +2329,14 @@ class PrecEngine:
         if not line:
             return
 
-        map_match = re.search(r"Map:\s+([a-zA-Z0-9_]+)", line)
+        map_match = re.search(r"(?:Map:\s+|map\s*:\s+)([a-zA-Z0-9_]+)", line, re.I)
         if map_match:
-            self.current_map = map_match.group(1)
+            new_map = map_match.group(1)
+            if new_map != self.current_map:
+                self.current_map = new_map
+                prefix = self.get_demo_prefix()
+                if prefix:
+                    self.send_cmd(f'ds_prefix "{prefix}"')
 
         conn_match = re.search(r"Connecting to\s+([0-9\.\:]+)", line)
         if conn_match:
@@ -2536,6 +2562,26 @@ class PrecEngine:
 
         log_path = tf_dir / "console.log"
         print(f"[TAILER] Monitoring console log at: {log_path}", flush=True)
+
+        # Pre-scan recent console.log lines to detect current map & server state immediately
+        if log_path.exists():
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="ignore") as f_init:
+                    f_init.seek(0, os.SEEK_END)
+                    size = f_init.tell()
+                    f_init.seek(max(0, size - 32768))
+                    for init_line in f_init.readlines():
+                        m = re.search(r"(?:Map:\s+|map\s*:\s+)([a-zA-Z0-9_]+)", init_line, re.I)
+                        if m:
+                            self.current_map = m.group(1)
+            except Exception:
+                pass
+
+        if self.current_map:
+            prefix = self.get_demo_prefix()
+            if prefix:
+                self.send_cmd(f'ds_prefix "{prefix}"')
+            print(f"[{APP_NAME}] Current map detected: {self.current_map} | Demo Prefix: {prefix}", flush=True)
 
         tailer = ConsoleLogTailer(log_path)
         self.tailer = tailer
