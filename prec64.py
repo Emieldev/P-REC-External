@@ -2047,10 +2047,34 @@ class PrecEngine:
             self.current_server_ip = conn_match.group(1)
             self.apply_league_cvars()
 
-        if "mp_tournament 1" in line or "mp_tournament changed to 1" in line:
+        if re.search(r"mp_tournament['\"\s]+(?:changed to\s+)?=?\s*['\"]?1", line, re.I):
             self.is_tournament = True
-        elif "mp_tournament 0" in line or "mp_tournament changed to 0" in line:
+        elif re.search(r"mp_tournament['\"\s]+(?:changed to\s+)?=?\s*['\"]?0", line, re.I):
             self.is_tournament = False
+
+        # Auto-detect league from whitelist or server hostname (in case configs loaded on server boot)
+        if "mp_tournament_whitelist" in line or "hostname:" in line or "sv_tags" in line:
+            for l_id, prof in self.profiles.items():
+                if l_id == "custom":
+                    continue
+                patterns = [prof.get("prefix", l_id), l_id]
+                for p in prof.get("server_config_patterns", []):
+                    clean_p = re.sub(r'[^a-zA-Z0-9]', '', p)
+                    if len(clean_p) >= 2:
+                        patterns.append(clean_p)
+                if any(re.search(pat, line, re.I) for pat in patterns):
+                    self.is_tournament = True
+                    is_scrim = bool(re.search(r"scrim", line, re.I))
+                    if self.active_profile.get("id") != l_id or self.is_scrim != is_scrim:
+                        self.active_profile = prof
+                        self.is_scrim = is_scrim
+                        mode_label = "SCRIM MODE (Practice)" if is_scrim else "OFFICIAL MATCH"
+                        print(f"\n[{APP_NAME}] ⚡ AUTO-DETECTED LEAGUE FROM SERVER: {prof.get('name')} [{mode_label}]", flush=True)
+                        print(f"[{APP_NAME}] Source: {line.strip()}", flush=True)
+                        self.apply_league_cvars()
+                        if hasattr(self, "tray") and self.tray:
+                            self.tray.update_status(f"{prof.get('name')} [{mode_label}]")
+                    break
 
         # 1. Auto-switch League Profile & Scrim / Match mode based on loaded server configs
         for l_id, prof in self.profiles.items():
@@ -2090,12 +2114,20 @@ class PrecEngine:
         # 2. General Tournament Live Events
         if re.search(r"The match will begin in \d+ seconds", line, re.I):
             self.is_tournament = True
-            self.start_recording("Tournament Countdown Started")
+            if self.is_recording:
+                self.send_cmd("ds_stop; ds_record")
+                self.send_cmd('echo "[P-REC External] Tournament countdown begun — restarted demo for official match!"')
+            else:
+                self.start_recording("Tournament Countdown Started")
             return
 
         if re.search(r"Tournament mode restarted", line, re.I) or "mp_tournament_restart" in line:
             self.is_tournament = True
-            self.start_recording("Tournament Mode Restarted (Live)")
+            if self.is_recording:
+                self.send_cmd("ds_stop; ds_record")
+                self.send_cmd('echo "[P-REC External] Tournament mode restarted — restarted demo for official match!"')
+            else:
+                self.start_recording("Tournament Mode Restarted (Live)")
             return
 
         if "[SOAP] Match is starting" in line or "[SOAP] Match begins" in line:
@@ -2129,10 +2161,20 @@ class PrecEngine:
             return
 
     def _check_midmatch_reconnect(self):
-        time.sleep(3.0)
-        if not self.is_recording and self.sender:
-            print(f"[{APP_NAME}] Verifying match state after connection...", flush=True)
-            self.send_cmd("status")
+        time.sleep(2.5)
+        if not self.sender:
+            return
+        print(f"[{APP_NAME}] Checking server tournament state...", flush=True)
+        self.send_cmd("mp_tournament")
+        time.sleep(0.3)
+        self.send_cmd("mp_tournament_whitelist")
+        time.sleep(0.3)
+        self.send_cmd("status")
+        time.sleep(1.0)
+
+        if self.is_tournament and self.cfg.prec_mode >= 2 and not self.is_recording:
+            print(f"[{APP_NAME}] mp_tournament 1 active on server — initiating match recording!", flush=True)
+            self.start_recording("Server in Tournament Mode on Join (mp_tournament 1)")
 
     def run(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
