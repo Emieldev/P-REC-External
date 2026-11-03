@@ -2174,6 +2174,7 @@ class PrecEngine:
         # Immunize localhost and clear any transient bans
         self.send_cmd('sv_rcon_whitelist_address "127.0.0.1"')
         self.send_cmd("removeip 127.0.0.1")
+        self.send_cmd('con_logfile "console.log"')
 
         self.send_cmd(f'ds_dir "{self.cfg.prec_dir}"')
         self.send_cmd(f"ds_notify {self.cfg.prec_notify}")
@@ -2526,6 +2527,12 @@ class PrecEngine:
             print("          Please set 'prec_tf_path' in your settings config.", flush=True)
             time.sleep(3.0)
             return
+
+        # Ensure TF2 actively writes console output to console.log (even without -condebug)
+        try:
+            rcon.send_command('con_logfile "console.log"')
+        except Exception:
+            pass
 
         log_path = tf_dir / "console.log"
         print(f"[TAILER] Monitoring console log at: {log_path}", flush=True)
