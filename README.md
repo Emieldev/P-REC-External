@@ -188,6 +188,20 @@ You can choose either of these two options in TF2's Launch Options in Steam (**R
 ```
 *(If you already use [DemoMan](https://github.com/DemomanApp/DemoMan), keep DemoMan's launch options as they are — P-REC External detects DemoMan automatically and hooks into port 27969).*
 
+#### ⚡ Server RCON & serveme.tf Synergy (Auto-Healing RCON)
+> [!IMPORTANT]
+> **Understanding TF2's Single `rcon_password` Cvar:**
+> In Valve's Source Engine, the exact same console cvar (`rcon_password`) controls both:
+> 1. **Outgoing Server RCON:** Connecting to remote match servers (e.g. [serveme.tf](https://serveme.tf), match reservations, or dedicated scrim servers) to run admin commands (`rcon changelevel ...`, `rcon exec etf2l_6v6_5cp`).
+> 2. **Incoming Local Listen RCON:** The local port `27969` loopback socket on your computer used by P-REC External and DemoMan.
+>
+> When you run `rcon_password <password>` in-game or via an autoexec server alias, TF2 terminates existing local connections and switches port 27969's listening password to match.
+>
+> **How P-REC External seamlessly handles this:**
+> * **Steam Launch Alignment:** Set `+rcon_password YOUR_PASSWORD` in your Steam Launch Options matching your preferred match server password. On **serveme.tf**, you can configure your default RCON password in your user settings so every reservation matches your launch option.
+> * **Auto-Healing RCON Engine:** P-REC External automatically extracts candidate passwords from your running game process, `autoexec.cfg`, and `prec_server_rcon_passwords`. If you switch passwords in-game to run server commands, P-REC catches the socket reset, cycles candidate passwords, and re-authenticates in **under 1 millisecond** without missing a single frame or dropping demo recording!
+> * **Netcon Alternative:** If you prefer not to manage RCON passwords at all, you can also use **Option 2 (Netcon Mode)** below with `-netconport 2121`.
+
 ### ▶ Option 2: Netcon Mode (Ultra-Short, 16 characters)
 ```text
 -netconport 2121

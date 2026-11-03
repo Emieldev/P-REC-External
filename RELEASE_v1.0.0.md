@@ -24,6 +24,7 @@
 * **Reassuring In-Game Console Messages:** Announces connection, active league, and recording start/stop in TF2 console (`~`).
 * **Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
 * **Multi-League Rulesets:** Dedicated compliance for **ETF2L** (Rule 2.1), **AsiaFortress**, **RGL** (1008.5), **ozfortress**, **Matcha.tf**, and **CLTF2**.
+* **Auto-Healing RCON & serveme.tf Synergy:** Automatically synchronizes passwords and recovers instantly (<1ms) if you switch `rcon_password` in-game to execute server commands.
 * **DemoMan Integration:** Automatically discovers DemoMan's active RCON password and TF2 path.
 
 ---

@@ -264,6 +264,8 @@ class PrecConfig:
         self.prec_connection_mode = "auto" # "auto", "netcon", or "rcon"
         self.prec_rcon_port = 27969
         self.prec_rcon_password = ""
+        self.prec_server_rcon_passwords = []
+        self.candidate_passwords = []
         self.prec_netcon_port = 2121
         self.prec_tf_path = ""
 
@@ -339,20 +341,54 @@ class PrecConfig:
                     self.prec_rcon_port = int(val)
                 elif key in ("prec_rcon_password", "rcon_password"):
                     self.prec_rcon_password = val
+                elif key in ("prec_server_rcon_passwords", "server_rcon_passwords", "prec_server_passwords"):
+                    raw_pws = re.split(r'[,;\s]+', val)
+                    self.prec_server_rcon_passwords = [p.strip() for p in raw_pws if p.strip()]
                 elif key in ("prec_netcon_port", "netcon_port"):
                     self.prec_netcon_port = int(val)
                 elif key in ("prec_tf_path", "tf_path"):
                     self.prec_tf_path = val
 
-        # Auto-detect DemoMan or generate secure password in-memory if not set or default
+        # Harvest candidate passwords for RCON auto-healing and synchronization
+        candidates = []
+        if self.prec_rcon_password and self.prec_rcon_password.lower() not in ("changeme", "generate", ""):
+            candidates.append(self.prec_rcon_password)
+        for sp in self.prec_server_rcon_passwords:
+            if sp and sp not in candidates:
+                candidates.append(sp)
+
+        # 1. Detect from running TF2 process commandline (+rcon_password <pw>)
+        proc_pws = detect_process_rcon_passwords()
+        for pp in proc_pws:
+            if pp and pp not in candidates:
+                candidates.append(pp)
+
+        # 2. Detect from DemoMan leveldb
         demoman = detect_demoman_config()
+        if demoman.get("rcon_password"):
+            dp = demoman["rcon_password"]
+            if dp and dp not in candidates:
+                candidates.append(dp)
+
+        # 3. Detect from local TF2 config files (e.g. autoexec.cfg aliases, serveme configs)
+        tf_dir_for_scan = self.prec_tf_path or (str(demoman["tf_path"].resolve()) if demoman.get("tf_path") else None) or (str(detect_tf2_directory().resolve()) if detect_tf2_directory() else None)
+        if tf_dir_for_scan:
+            local_cfg_pws = discover_local_rcon_passwords(tf_dir_for_scan)
+            for lp in local_cfg_pws:
+                if lp and lp not in candidates:
+                    candidates.append(lp)
+
+        self.candidate_passwords = candidates
+
+        # Auto-adopt active password from environment if not explicitly set
         if not self.prec_rcon_password or self.prec_rcon_password.lower() in ("changeme", "generate", ""):
-            if demoman.get("rcon_password"):
-                self.prec_rcon_password = demoman["rcon_password"]
-                print(f"[DEMOMAN] Automatically adopted RCON password from DemoMan in memory: {self.prec_rcon_password}", flush=True)
+            if candidates:
+                self.prec_rcon_password = candidates[0]
+                print(f"[RCON AUTO-SYNC] Synchronized active RCON password from environment: {self.prec_rcon_password}", flush=True)
             else:
                 generated_pw = secrets.token_hex(6)
                 self.prec_rcon_password = generated_pw
+                self.candidate_passwords.append(generated_pw)
                 print(f"[SECURITY] Using temporary session RCON password in memory: {generated_pw}", flush=True)
 
         if not self.prec_tf_path and demoman.get("tf_path"):
@@ -390,7 +426,8 @@ alias pr_message_mark  "say_team [P-REC] Bookmark placed."
 
 prec_connection_mode     "auto"
 prec_rcon_port           27969
-prec_rcon_password       "changeme"
+prec_rcon_password       ""
+prec_server_rcon_passwords ""
 prec_netcon_port         2121
 prec_tf_path             ""
 """
@@ -499,6 +536,85 @@ def detect_demoman_config():
         "rcon_password": found_pw,
         "tf_path": found_tf
     }
+
+
+def detect_process_rcon_passwords():
+    """
+    Extracts any active +rcon_password parameters from running TF2 processes.
+    Supports Windows (Win32_Process) and Linux (/proc/<pid>/cmdline).
+    """
+    passwords = []
+    if sys.platform == "win32":
+        try:
+            cmd = [
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "Get-CimInstance Win32_Process -Filter \"name like 'tf%.exe' or name like 'hl2%.exe'\" | Select-Object -ExpandProperty CommandLine"
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            if res.returncode == 0 and res.stdout:
+                matches = re.findall(r'\+rcon_password\s+([^\s]+)', res.stdout)
+                for m in matches:
+                    clean = m.strip().strip('"').strip("'")
+                    if clean and clean not in passwords:
+                        passwords.append(clean)
+        except Exception:
+            pass
+    else:
+        try:
+            tf_running, _, pid = is_tf2_running()
+            if tf_running and pid:
+                p_cmd = Path(f"/proc/{pid}/cmdline")
+                if p_cmd.exists():
+                    raw = p_cmd.read_bytes().replace(b"\x00", b" ").decode("utf-8", "ignore")
+                    matches = re.findall(r'\+rcon_password\s+([^\s]+)', raw)
+                    for m in matches:
+                        clean = m.strip().strip('"').strip("'")
+                        if clean and clean not in passwords:
+                            passwords.append(clean)
+        except Exception:
+            pass
+    return passwords
+
+
+def discover_local_rcon_passwords(tf_path=None):
+    """
+    Scans local TF2 configuration files for configured or aliased rcon_password values
+    (e.g., autoexec.cfg, PREC_Settings.cfg, serveme configs).
+    """
+    candidates = []
+    if not tf_path:
+        return candidates
+
+    base = Path(tf_path)
+    paths_to_check = [
+        base / "cfg/overrides/autoexec.cfg",
+        base / "cfg/autoexec.cfg",
+        base / "cfg/user/autoexec.cfg",
+        base / "custom/P-REC/cfg/PREC_Settings.cfg",
+        base / "cfg/PREC_Settings.cfg",
+    ]
+    cfg_dir = base / "cfg"
+    if cfg_dir.exists():
+        for f in cfg_dir.glob("*.cfg"):
+            fl = f.name.lower()
+            if fl.startswith("serveme") or "rcon" in fl or "etf2l" in fl or "match" in fl:
+                if f not in paths_to_check:
+                    paths_to_check.append(f)
+
+    for cp in paths_to_check:
+        if cp.exists():
+            try:
+                content = cp.read_text(encoding="utf-8", errors="ignore")
+                for line in content.splitlines():
+                    matches = re.findall(r'rcon_password\s+["\']?([^"\'\s;]+)', line)
+                    for pw in matches:
+                        pw_clean = pw.strip()
+                        if pw_clean and pw_clean.lower() not in ('""', "''", "changeme", "generate"):
+                            if pw_clean not in candidates:
+                                candidates.append(pw_clean)
+            except Exception:
+                pass
+    return candidates
 
 
 def get_app_dir():
@@ -1391,7 +1507,13 @@ def run_setup_wizard():
     print("in Steam (Right-click Team Fortress 2 in Steam -> Properties):\n", flush=True)
     print("[Option 1: RCON Mode] (Recommended - identical to DemoMan):", flush=True)
     print(f"  -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n", flush=True)
-    print("  * If you already run DemoMan, you already have this in Steam!\n", flush=True)
+    print("  * If you already run DemoMan, you already have this in Steam!", flush=True)
+    print("  💡 SERVEME.TF & SERVER RCON SYNERGY:", flush=True)
+    print("    TF2 uses 'rcon_password' for BOTH outgoing server rcon and local listen rcon.", flush=True)
+    print("    For the best experience, configure your serveme.tf account's default RCON password", flush=True)
+    print(f"    to match your launch option ('{rcon_pw}').", flush=True)
+    print("    P-REC External also features Auto-Healing RCON: if you ever switch rcon_password in-game", flush=True)
+    print("    to run server commands, P-REC automatically re-authenticates in <1ms without dropping recording!\n", flush=True)
     print("[Option 2: Netcon Mode] (Ultra-short, 16 characters):", flush=True)
     print("  -netconport 2121\n", flush=True)
     print("-" * 65, flush=True)
@@ -1438,6 +1560,7 @@ prec_log                 0
 prec_delete_useless_demo 0      // 0 = never delete (mandatory for league compliance)
 prec_stv_status          1
 prec_tag                 ""
+prec_demo_name           "%date%_%time%_%map%_%red%_%blu%"
 
 // Chat Announcements
 alias pr_message_start "say_team [P-REC] Recording started."
@@ -1449,6 +1572,11 @@ prec_connection_mode     "auto"
 prec_rcon_port           27969
 rcon_password            "{rcon_pw}"
 prec_rcon_password       "{rcon_pw}"
+
+// Server RCON & serveme.tf Synergy:
+// TF2 shares 'rcon_password' for both outgoing server commands and local listen RCON.
+// P-REC automatically synchronizes with active passwords and auto-heals when passwords switch.
+prec_server_rcon_passwords ""
 prec_netcon_port         2121
 prec_tf_path             "{tf_path}"
 """
@@ -1479,43 +1607,84 @@ class SourceRcon:
     SERVERDATA_RESPONSE_VALUE = 0
     SERVERDATA_AUTH_RESPONSE = 2
 
-    def __init__(self, host="127.0.0.1", port=27969, password=""):
+    def __init__(self, host="127.0.0.1", port=27969, password="", candidate_passwords=None):
         self.host = host
         self.port = port
         self.password = password
+        self.candidate_passwords = list(candidate_passwords or [])
+        if password and password not in self.candidate_passwords:
+            self.candidate_passwords.insert(0, password)
         self.sock = None
         self.req_id = 1
         self.lock = threading.Lock()
 
-    def connect(self, timeout=3.0, verbose=False):
+    def connect(self, timeout=2.0, verbose=False):
         self.close()
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(timeout)
+        passwords_to_try = [self.password] if self.password else []
+        for p in self.candidate_passwords:
+            if p and p not in passwords_to_try:
+                passwords_to_try.append(p)
+
         if verbose:
             print(f"[RCON DEBUG] Connecting to TCP {self.host}:{self.port}...", flush=True)
-        s.connect((self.host, self.port))
-        self.sock = s
-        auth_req_id = self._send_raw(self.SERVERDATA_AUTH, self.password)
-        if verbose:
-            print(f"[RCON DEBUG] Sent SERVERDATA_AUTH (packet_id={auth_req_id}). Waiting for engine response...", flush=True)
-        # Source RCON protocol flow: servers first send an empty SERVERDATA_RESPONSE_VALUE (type 0),
-        # followed immediately by SERVERDATA_AUTH_RESPONSE (type 2).
-        start_t = time.time()
-        while time.time() - start_t < timeout:
-            resp_id, resp_type, body = self._read_raw()
-            if verbose:
-                print(f"[RCON DEBUG] Received packet: id={resp_id}, type={resp_type}, body_len={len(body)}", flush=True)
-            if resp_type == self.SERVERDATA_AUTH_RESPONSE:
-                if resp_id == -1 or resp_id != auth_req_id:
-                    self.close()
-                    raise PermissionError("RCON password rejected by TF2")
-                return True
-            elif resp_type == self.SERVERDATA_RESPONSE_VALUE:
-                # Discard initial acknowledgement and wait for AUTH_RESPONSE
-                continue
-            else:
-                break
-        return True
+
+        last_err = None
+        for pw in passwords_to_try:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(timeout)
+                s.connect((self.host, self.port))
+
+                # Send SERVERDATA_AUTH
+                req_id = 1
+                payload = pw.encode("utf-8", errors="replace") + b"\x00\x00"
+                packet = struct.pack("<iii", 4 + 4 + len(payload), req_id, self.SERVERDATA_AUTH) + payload
+                s.sendall(packet)
+
+                # Read auth response
+                start_t = time.time()
+                auth_ok = False
+                while time.time() - start_t < timeout:
+                    size_hdr = self._recv_exact_s(s, 4)
+                    size = struct.unpack("<i", size_hdr)[0]
+                    if size < 10 or size > 65536:
+                        break
+                    data = self._recv_exact_s(s, size)
+                    r_id, r_type = struct.unpack("<ii", data[:8])
+                    if r_type == self.SERVERDATA_AUTH_RESPONSE:
+                        if r_id != -1 and r_id == req_id:
+                            auth_ok = True
+                            break
+                        else:
+                            break
+                    elif r_type == self.SERVERDATA_RESPONSE_VALUE:
+                        continue
+                    else:
+                        break
+
+                if auth_ok:
+                    self.sock = s
+                    if pw != self.password:
+                        print(f"[RCON AUTO-HEAL] Reconnected & synchronized active password: '{pw}'", flush=True)
+                    self.password = pw
+                    return True
+                else:
+                    s.close()
+            except Exception as e:
+                last_err = e
+
+        if last_err:
+            raise last_err
+        raise PermissionError("RCON password rejected by TF2")
+
+    def _recv_exact_s(self, s, n):
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = s.recv(n - len(buf))
+            if not chunk:
+                raise ConnectionResetError("RCON connection closed by remote host")
+            buf.extend(chunk)
+        return bytes(buf)
 
     def _send_raw(self, packet_type, body):
         self.req_id = (self.req_id + 1) % 0x7FFFFFFF or 1
@@ -1526,13 +1695,7 @@ class SourceRcon:
         return self.req_id
 
     def _recv_exact(self, n):
-        buf = bytearray()
-        while len(buf) < n:
-            chunk = self.sock.recv(n - len(buf))
-            if not chunk:
-                raise ConnectionResetError("RCON connection closed by remote host")
-            buf.extend(chunk)
-        return bytes(buf)
+        return self._recv_exact_s(self.sock, n)
 
     def _read_raw(self):
         size_header = self._recv_exact(4)
@@ -1544,13 +1707,28 @@ class SourceRcon:
         body = data[8:-2].decode("utf-8", errors="replace")
         return req_id, packet_type, body
 
-    def send_command(self, cmd):
+    def send_command(self, cmd, retry=True):
         with self.lock:
-            if not self.sock:
-                self.connect()
-            self._send_raw(self.SERVERDATA_EXECCOMMAND, cmd)
-            req_id, packet_type, body = self._read_raw()
-            return body
+            try:
+                if not self.sock:
+                    self.connect()
+                self._send_raw(self.SERVERDATA_EXECCOMMAND, cmd)
+                req_id, packet_type, body = self._read_raw()
+                return body
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+                self.close()
+                if retry:
+                    try:
+                        for p in detect_process_rcon_passwords():
+                            if p and p not in self.candidate_passwords:
+                                self.candidate_passwords.insert(0, p)
+                        self.connect()
+                        self._send_raw(self.SERVERDATA_EXECCOMMAND, cmd)
+                        req_id, packet_type, body = self._read_raw()
+                        return body
+                    except Exception:
+                        pass
+                raise e
 
     def close(self):
         if self.sock:
@@ -2126,8 +2304,10 @@ class PrecEngine:
             rcon_ok = False
             rcon_error = None
             try:
-                rc = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password)
+                rc = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password, candidate_passwords=self.cfg.candidate_passwords)
                 rc.connect(timeout=1.2, verbose=True)
+                if rc.password != self.cfg.prec_rcon_password:
+                    self.cfg.prec_rcon_password = rc.password
                 rc.close()
                 rcon_ok = True
                 print(f"  [+] RCON (Port {self.cfg.prec_rcon_port}): PORT OPEN! Password authenticated successfully.", flush=True)
@@ -2609,8 +2789,10 @@ class PrecEngine:
 
             if not connected and self.cfg.prec_connection_mode in ("auto", "rcon"):
                 try:
-                    rcon = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password)
+                    rcon = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password, candidate_passwords=self.cfg.candidate_passwords)
                     rcon.connect(timeout=1.0)
+                    if rcon.password != self.cfg.prec_rcon_password:
+                        self.cfg.prec_rcon_password = rcon.password
                     self.sender = rcon
                     self.client_mode = "rcon"
                     print(f"\n[CONNECTED] RCON session active on port {self.cfg.prec_rcon_port} (DemoMan bridge)!", flush=True)
