@@ -1141,21 +1141,37 @@ def run_setup_wizard():
     print(f"Target Primary Autoexec: {rel_auto} ({status_str})", flush=True)
     print(f"Path: {target_autoexec.resolve()}", flush=True)
     print("=" * 65, flush=True)
-    print("P-REC External only needs to load once in your primary autoexec.", flush=True)
-    print("It will NOT touch game_overrides.cfg or create duplicate configs.\n", flush=True)
-    print("Proposed addition:\n" + get_recommended_snippet(cfg_target.name), flush=True)
 
-    if sys.stdin.isatty():
-        ans = input(f"Add optimal P-REC settings to {rel_auto}? [Y/n]: ").strip().lower()
-    else:
-        ans = "y"
+    # Check if target autoexec already contains P-REC configuration
+    already_configured = False
+    if target_autoexec.exists():
+        try:
+            with open(target_autoexec, "r", encoding="utf-8", errors="ignore") as f:
+                autoexec_text = f.read()
+            if cfg_target.name.lower() in autoexec_text.lower() or "exec prec_settings" in autoexec_text.lower() or ("p-rec" in autoexec_text.lower() and "ds_autodelete" in autoexec_text.lower()):
+                already_configured = True
+        except Exception:
+            pass
 
-    if ans != "n":
-        apply_cfg_update(target_autoexec, cfg_target.name)
-        print(f"[OK] Successfully configured {rel_auto}!\n", flush=True)
+    if already_configured:
+        print(f"[OK] Active autoexec '{rel_auto}' already contains P-REC configuration!", flush=True)
+        print("     Skipping configuration prompt (no duplicate lines needed).\n", flush=True)
     else:
-        print(f"[SKIP] Automatic update declined for {rel_auto}.", flush=True)
-        show_manual_cfg_instructions(target_autoexec, cfg_target.name, tf_path)
+        print("P-REC External only needs to load once in your primary autoexec.", flush=True)
+        print("It will NOT touch game_overrides.cfg or create duplicate configs.\n", flush=True)
+        print("Proposed addition:\n" + get_recommended_snippet(cfg_target.name), flush=True)
+
+        if sys.stdin.isatty():
+            ans = input(f"Add optimal P-REC settings to {rel_auto}? [Y/n]: ").strip().lower()
+        else:
+            ans = "y"
+
+        if ans != "n":
+            apply_cfg_update(target_autoexec, cfg_target.name)
+            print(f"[OK] Successfully configured {rel_auto}!\n", flush=True)
+        else:
+            print(f"[SKIP] Automatic update declined for {rel_auto}.", flush=True)
+            show_manual_cfg_instructions(target_autoexec, cfg_target.name, tf_path)
 
     # 9. Auto-Start Configuration
     if sys.stdin.isatty():
@@ -1181,16 +1197,17 @@ def run_setup_wizard():
     print("=" * 65, flush=True)
     print("             SETUP COMPLETE! STEAM LAUNCH OPTIONS:             ", flush=True)
     print("=" * 65, flush=True)
-    print("Choose ONE of the following and paste it into TF2's Launch Options", flush=True)
+    print("Add EITHER of these to the end of your existing Launch Options", flush=True)
     print("in Steam (Right-click Team Fortress 2 in Steam -> Properties):\n", flush=True)
-    print("▶ Option 1: RCON Mode (Recommended for standard TF2 & DemoMan):", flush=True)
-    print(f"  -condebug -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n", flush=True)
+    print("▶ Option 1: RCON Mode (Recommended - identical to DemoMan):", flush=True)
+    print(f"  -usercon +rcon_password {rcon_pw} +ip 0.0.0.0 +hostport 27969 +net_start\n", flush=True)
+    print("  * If you already run DemoMan, you already have this in Steam!\n", flush=True)
     print("▶ Option 2: Netcon Mode (Ultra-short, 16 characters):", flush=True)
     print("  -netconport 2121\n", flush=True)
     print("-" * 65, flush=True)
-    print("Both options fit directly into Steam's Launch Options box!", flush=True)
+    print("Both options fit directly into Steam's box alongside your existing flags.", flush=True)
     print("When TF2 opens, P-REC External connects automatically and announces", flush=True)
-    print("its status directly into your TF2 in-game developer console.", flush=True)
+    print("its status directly into your TF2 in-game developer console (~).", flush=True)
     print("=" * 65, flush=True)
 
     if sys.stdin.isatty():

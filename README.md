@@ -182,9 +182,9 @@ python3 prec64.py --install
 
 You can choose either of these two options in TF2's Launch Options in Steam (**Right-click Team Fortress 2 in Steam -> Properties -> General -> Launch Options**). Both fit directly into Steam's box with zero shell wrappers:
 
-### ▶ Option 1: RCON Mode (Recommended for standard TF2 & DemoMan)
+### ▶ Option 1: RCON Mode (Recommended - identical to DemoMan)
 ```text
--condebug -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
+-usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
 ```
 *(If you already use [DemoMan](https://github.com/DemomanApp/DemoMan), keep DemoMan's launch options as they are — P-REC External detects DemoMan automatically and hooks into port 27969).*
 
