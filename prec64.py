@@ -39,6 +39,10 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
 APP_NAME = "P-REC External"
 APP_VERSION = "1.0.0"
 APP_FULL_TITLE = f"P-REC External v{APP_VERSION}"
@@ -1855,6 +1859,214 @@ def get_icon_path(filename="supreme_soviet.png"):
     return None
 
 
+# ====================================================================
+# Native Console Window (Cross-out hides to Hidden Pictograms / Tray)
+# ====================================================================
+
+class ConsoleRedirector:
+    def __init__(self, native_console, orig_stream):
+        self.native_console = native_console
+        self.orig_stream = orig_stream
+
+    def write(self, s):
+        if self.orig_stream:
+            try:
+                self.orig_stream.write(s)
+                self.orig_stream.flush()
+            except Exception:
+                pass
+        if self.native_console:
+            self.native_console.write(s)
+
+    def flush(self):
+        if self.orig_stream:
+            try:
+                self.orig_stream.flush()
+            except Exception:
+                pass
+
+
+class NativeConsoleWindow:
+    """
+    Native Win32 console window for P-REC External on Windows.
+    Intercepts WM_CLOSE so clicking 'X' (cross-out) smoothly moves the
+    window to the background (Hidden Pictograms / Tray) instead of closing the application.
+    Features:
+      - Dark terminal theme (#121212 background, #E0E0E0 text)
+      - Consolas monospace font
+      - Real-time stream of all stdout and stderr prints
+      - Safe buffer trimming (keeps last 500,000 characters)
+    """
+    def __init__(self, title=f"{APP_FULL_TITLE} - Console", on_hide_callback=None):
+        self.title = title
+        self.hwnd = None
+        self.edit_hwnd = None
+        self.visible = False
+        self.thread = None
+        self.ready_event = threading.Event()
+        self.on_hide_callback = on_hide_callback
+        self._buffer = []
+        self._lock = threading.Lock()
+
+    def start(self):
+        if sys.platform != "win32":
+            return
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+        self.ready_event.wait(timeout=2.0)
+
+    def show(self):
+        if sys.platform != "win32" or not self.hwnd:
+            return
+        ctypes.windll.user32.ShowWindow(self.hwnd, 5)  # SW_SHOW
+        ctypes.windll.user32.SetForegroundWindow(self.hwnd)
+        self.visible = True
+
+    def hide(self):
+        if sys.platform != "win32" or not self.hwnd:
+            return
+        ctypes.windll.user32.ShowWindow(self.hwnd, 0)  # SW_HIDE
+        self.visible = False
+
+    def toggle(self):
+        if self.visible:
+            self.hide()
+        else:
+            self.show()
+
+    def write(self, text):
+        if not text or sys.platform != "win32":
+            return
+        clean_text = text.replace("\r\n", "\n").replace("\n", "\r\n")
+        with self._lock:
+            if not self.edit_hwnd:
+                self._buffer.append(clean_text)
+                return
+            try:
+                user32 = ctypes.windll.user32
+                length = user32.GetWindowTextLengthW(self.edit_hwnd)
+                if length > 500000:
+                    user32.SendMessageW(self.edit_hwnd, 0x00B1, 0, ctypes.c_void_p(100000))
+                    user32.SendMessageW(self.edit_hwnd, 0x00C2, 0, ctypes.cast(ctypes.create_unicode_buffer(""), ctypes.c_void_p))
+                    length = user32.GetWindowTextLengthW(self.edit_hwnd)
+                buf = ctypes.create_unicode_buffer(clean_text)
+                user32.SendMessageW(self.edit_hwnd, 0x00B1, length, ctypes.c_void_p(length))
+                user32.SendMessageW(self.edit_hwnd, 0x00C2, 0, ctypes.cast(buf, ctypes.c_void_p))
+                user32.SendMessageW(self.edit_hwnd, 0x0115, 7, None)  # WM_VSCROLL SB_BOTTOM
+            except Exception:
+                pass
+
+    def _run_loop(self):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            gdi32 = ctypes.windll.gdi32
+
+            LRESULT = ctypes.c_longlong
+            user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+            user32.DefWindowProcW.restype = LRESULT
+            user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, ctypes.c_void_p]
+            user32.SendMessageW.restype = LRESULT
+
+            class_name = f"PREC_NativeConsole_{os.getpid()}"
+            h_inst = kernel32.GetModuleHandleW(None)
+
+            WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+
+            def wnd_proc(hwnd, msg, wp, lp):
+                if msg == 0x0010:  # WM_CLOSE
+                    # Cross out clicked ('X') -> Move to background / hidden pictograms, DO NOT CLOSE
+                    user32.ShowWindow(hwnd, 0)  # SW_HIDE
+                    self.visible = False
+                    if self.on_hide_callback:
+                        try:
+                            self.on_hide_callback()
+                        except Exception:
+                            pass
+                    return 0
+                elif msg == 0x0005:  # WM_SIZE
+                    w = lp & 0xFFFF
+                    h = (lp >> 16) & 0xFFFF
+                    if self.edit_hwnd:
+                        user32.MoveWindow(self.edit_hwnd, 0, 0, w, h, True)
+                    return 0
+                elif msg == 0x0138:  # WM_CTLCOLORSTATIC (dark theme)
+                    hdc = wintypes.HDC(wp)
+                    gdi32.SetTextColor(hdc, 0x00E0E0E0)
+                    gdi32.SetBkColor(hdc, 0x00121212)
+                    return gdi32.GetStockObject(4)  # BLACK_BRUSH
+                return user32.DefWindowProcW(hwnd, msg, wp, lp)
+
+            self._wnd_proc = WNDPROC(wnd_proc)
+
+            class WNDCLASSEXW(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.UINT),
+                    ("style", wintypes.UINT),
+                    ("lpfnWndProc", WNDPROC),
+                    ("cbClsExtra", ctypes.c_int),
+                    ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", wintypes.HINSTANCE),
+                    ("hIcon", wintypes.HICON),
+                    ("hCursor", wintypes.HICON),
+                    ("hbrBackground", wintypes.HBRUSH),
+                    ("lpszMenuName", wintypes.LPCWSTR),
+                    ("lpszClassName", wintypes.LPCWSTR),
+                    ("hIconSm", wintypes.HICON),
+                ]
+
+            wc = WNDCLASSEXW()
+            wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+            wc.lpfnWndProc = self._wnd_proc
+            wc.hInstance = h_inst
+            wc.lpszClassName = class_name
+            wc.hbrBackground = gdi32.GetStockObject(4)
+            user32.RegisterClassExW(ctypes.byref(wc))
+
+            self.hwnd = user32.CreateWindowExW(
+                0, class_name, self.title,
+                0x00CF0000, 150, 150, 800, 520,
+                None, None, h_inst, None
+            )
+
+            edit_style = 0x40000000 | 0x10000000 | 0x00200000 | 0x0004 | 0x0040 | 0x0800
+            self.edit_hwnd = user32.CreateWindowExW(
+                0, "EDIT", "",
+                edit_style, 0, 0, 784, 481,
+                self.hwnd, None, h_inst, None
+            )
+
+            h_font = gdi32.CreateFontW(16, 0, 0, 0, 400, False, False, False, 1, 0, 0, 2, 0, "Consolas")
+            user32.SendMessageW(self.edit_hwnd, 0x0030, h_font, None)
+
+            ico_file = get_icon_path("supreme_soviet.ico")
+            if ico_file and Path(ico_file).exists():
+                try:
+                    h_icon = user32.LoadImageW(None, str(ico_file), 1, 32, 32, 0x00000010)
+                    if h_icon:
+                        user32.SendMessageW(self.hwnd, 0x0080, 1, ctypes.c_void_p(h_icon))
+                        user32.SendMessageW(self.hwnd, 0x0080, 0, ctypes.c_void_p(h_icon))
+                except Exception:
+                    pass
+
+            with self._lock:
+                for buffered in self._buffer:
+                    self.write(buffered)
+                self._buffer.clear()
+
+            self.ready_event.set()
+
+            msg = wintypes.MSG()
+            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+        except Exception:
+            pass
+
+
 # Windows System Tray (Hidden Pictograms / Notification Area)
 # ====================================================================
 
@@ -1881,10 +2093,24 @@ class WindowsSystemTray:
         self.running = True
         self.thread = None
         self.console_visible = True
+        self.native_console = None
+
+    def _on_console_hidden(self):
+        self.console_visible = False
 
     def start(self):
         if sys.platform != "win32":
             return
+        try:
+            self.native_console = NativeConsoleWindow(
+                title=f"{APP_FULL_TITLE} - Console (Close hides to tray)",
+                on_hide_callback=self._on_console_hidden
+            )
+            self.native_console.start()
+            sys.stdout = ConsoleRedirector(self.native_console, sys.__stdout__)
+            sys.stderr = ConsoleRedirector(self.native_console, sys.__stderr__)
+        except Exception:
+            pass
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
 
@@ -1933,27 +2159,32 @@ class WindowsSystemTray:
     def hide_console(self):
         if sys.platform != "win32":
             return
+        if getattr(self, "native_console", None):
+            self.native_console.hide()
         try:
             import ctypes
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
                 ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
-                self.console_visible = False
         except Exception:
             pass
+        self.console_visible = False
 
     def show_console(self):
         if sys.platform != "win32":
             return
-        try:
-            import ctypes
-            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-            if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
-                self.console_visible = True
-        except Exception:
-            pass
+        if getattr(self, "native_console", None):
+            self.native_console.show()
+        else:
+            try:
+                import ctypes
+                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
+                    ctypes.windll.user32.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+        self.console_visible = True
 
     def toggle_console(self):
         if self.console_visible:
@@ -1963,6 +2194,12 @@ class WindowsSystemTray:
 
     def close(self):
         self.running = False
+        if getattr(self, "native_console", None) and self.native_console.hwnd:
+            try:
+                import ctypes
+                ctypes.windll.user32.DestroyWindow(self.native_console.hwnd)
+            except Exception:
+                pass
         if sys.platform == "win32" and self.hwnd:
             try:
                 import ctypes
@@ -2224,9 +2461,11 @@ class PrecEngine:
         self.tray.start()
 
         # Hide console to system tray (hidden pictograms) if configured
-        if getattr(self.cfg, "prec_hide_to_tray", 1) and sys.platform == "win32":
-            if not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
+        if sys.platform == "win32":
+            if getattr(self.cfg, "prec_hide_to_tray", 1) and not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
                 self.tray.hide_console()
+            else:
+                self.tray.show_console()
 
         # Ensure Desktop Shortcut exists if enabled (default=1)
         if getattr(self.cfg, "prec_desktop_shortcut", 1):
@@ -2916,6 +3155,14 @@ def find_existing_config():
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        try:
+            h_con = ctypes.windll.kernel32.GetConsoleWindow()
+            if h_con and not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
+                ctypes.windll.user32.ShowWindow(h_con, 0)  # SW_HIDE
+        except Exception:
+            pass
+
     if any(arg in sys.argv for arg in ("--shortcut", "--create-shortcut")):
         create_desktop_shortcut()
         sys.exit(0)
