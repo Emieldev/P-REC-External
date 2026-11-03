@@ -1,14 +1,14 @@
 # GitHub Release v1.0.0 Template
 
 **Release Tag:** `v1.0.0`  
-**Release Title:** `P-REC v1.0.0 — Zero-Lag Match Recorder for TF2 64-Bit (Windows & Linux)`
+**Release Title:** `P-REC External v1.0.0 — Zero-Lag Match Recorder for TF2 64-Bit (Windows & Linux)`
 
 ---
 
 ## 📦 Release Description (Copy & Paste below into GitHub Release Body)
 
 ```markdown
-# P-REC: Point-of-view Recording External Companion (v1.0.0)
+# P-REC External (v1.0.0)
 ### Zero-Lag, Zero-Warmup Automated Match Recorder for Team Fortress 2 (64-Bit Native)
 
 ---
@@ -25,8 +25,12 @@
 * **0 FPS Drop / Zero Microstutters:** Runs 100% externally out-of-process. Zero HUD animation manifest hooks, zero VGUI modifications.
 * **100% VAC-Safe:** Connects to TF2 via official engine sockets. Zero DLL injection or memory tampering.
 * **Zero Warmup Bloat:** Listens to tournament countdown pulses and triggers recording strictly when the match goes live (no more 45-minute warmup demo files from `ds_enable 3`!).
+* **🔔 Sleek Desktop Pop-ups:** Displays bottom-right desktop pop-ups with TF2 *"That's a wrap!"* art. Uses Windows `WS_EX_NOACTIVATE` so it **never steals keyboard/mouse focus from TF2**.
+* **⚡ Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
+* **🔍 DemoMan Auto-Detection:** Automatically discovers local [DemoMan](https://github.com/DemomanApp/DemoMan) installations, extracts its active RCON password and pre-fills your TF2 `/tf` path!
 * **Multi-League Strict Rule Compliance:**
   * **ETF2L (Rule 2.1):** Auto-captures mandatory player SteamID & SourceTV screenshots (`status; jpeg`) at match end; recovers from mid-match crashes and reconnects without losing demo coverage.
+  * **AsiaFortress:** Full compliance with AsiaFortress Cup & League rules (`af_` tournament configs, mandatory POV demos, status screenshots).
   * **RGL (Rule 1008.5):** Mandatory POV demo recording, `rgl` prefixes, and `ds_autodelete 0` preservation.
   * **ozfortress:** Satisfies server-side `Demo Checker` plugin (`sm_querycvar` check for `ds_enable 3` & `ds_autodelete 0`), while cleanly splitting match demos from warmup on live countdown (`ds_stop; ds_record`).
   * **Matcha.tf & CLTF2:** Automated recording and league prefixes for Asia/Pacific and CustomLander competitions.
@@ -38,6 +42,7 @@
   * Auto-generates cryptographically secure RCON passwords (or hooks into DemoMan port `27969`).
 * **Modular League Profiles (`leagues/*.json`):** Third-party leagues can add their own rulesets simply by submitting a Pull Request!
 * **Steam Launch Option Auto-Boot:** Launches seamlessly alongside TF2.
+* **License:** Licensed under GNU General Public License v3.0 (GPL-3.0) — 100% free forever with complete liability disclaimer.
 
 ---
 
@@ -82,4 +87,3 @@ We encourage third-party leagues, tournament organizers, and community developer
 * **Add Your League:** Copy `leagues/template.json` to `leagues/<your_league>.json` and open a PR!
 * **Bug Fixes & HUD Integrations:** Feel free to submit pull requests or report issues.
 ```
-

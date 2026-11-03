@@ -1,0 +1,22 @@
+{
+  "id": "asiafortress",
+  "name": "AsiaFortress (AF)",
+  "rules_url": "https://docs.google.com/document/d/16D6nGRbq1ZafMtR1uBOfnvC3jJ4K4lPzqbrB6lqDQ74/edit?tab=t.0#heading=h.rdjxx5582d9w",
+  "prefix": "af",
+  "scrim_prefix": "af_scrim",
+  "ds_enable": 0,
+  "ds_autodelete": 0,
+  "ds_screens": 1,
+  "mandatory_status_screenshot": true,
+  "server_demo_checker_bypass": false,
+  "server_config_patterns": [
+    "af_(6v6|5cp|koth|golden_cap|scrim)",
+    "asiafortress.*",
+    "AsiaFortress"
+  ],
+  "chat_triggers": [
+    "Both teams are ready",
+    "Match is LIVE",
+    "All players are ready"
+  ]
+}
