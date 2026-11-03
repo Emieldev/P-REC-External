@@ -253,6 +253,7 @@ class PrecConfig:
         self.prec_delete_useless_demo = 0 # 0=never delete (mandatory across all leagues)
         self.prec_stv_status = 1
         self.prec_tag = ""
+        self.prec_demo_name = "%date%_%time%_%map%_%red%_%blu%"
 
         # Chat Aliases
         self.pr_message_start = "say_team [P-REC] Recording started."
@@ -330,6 +331,8 @@ class PrecConfig:
                     self.prec_stv_status = int(val)
                 elif key in ("prec_tag", "tag"):
                     self.prec_tag = val
+                elif key in ("prec_demo_name", "demo_name", "prec_naming_scheme", "naming_scheme", "prec_format"):
+                    self.prec_demo_name = val
                 elif key in ("prec_connection_mode", "connection_mode"):
                     self.prec_connection_mode = val.lower()
                 elif key in ("prec_rcon_port", "rcon_port"):
@@ -2026,6 +2029,9 @@ class PrecEngine:
         self.tailer = None
         self.current_server_ip = ""
         self.current_map = ""
+        self.current_red_team = "red"
+        self.current_blu_team = "blu"
+        self.current_demo_name = ""
         self.profiles = load_league_profiles(self.cfg.prec_tf_path)
         league_id = self.cfg.prec_league.lower()
         self.active_profile = self.profiles.get(league_id, self.profiles.get("custom", {}))
@@ -2087,7 +2093,9 @@ class PrecEngine:
             self.send_cmd('echo "[P-REC External] All systems operational. Match monitoring engaged."')
             self.send_cmd('echo "[P-REC External] ================================================"')
             self.send_cmd('echo ""')
-            self.send_cmd(f'say_team [P-REC] Connection check: SUCCESS! Active League: {prof_name} | Demo Prefix: {self.get_demo_prefix()}')
+            self.query_tournament_teams()
+            sample_name = self.format_demo_name()
+            self.send_cmd(f'say_team [P-REC] Connection check: SUCCESS! Active League: {prof_name} | Demo Template: {sample_name}.dem')
 
             if hasattr(self, "tray") and self.tray:
                 self.tray.update_status(f"Connected ({mode_upper} • {prof_name}) - OK")
@@ -2167,26 +2175,92 @@ class PrecEngine:
             self.tray.close()
         os._exit(0)
 
-    def get_demo_prefix(self) -> str:
-        """Determines the demo prefix for TF2 Demo Support.
-        Default naming scheme: <mapname>_<date>_<time>.dem
-        (TF2 Demo Support automatically appends <date>_<time> to ds_prefix).
+    def query_tournament_teams(self):
+        """Queries TF2 for active tournament red and blu team names."""
+        if not self.sender or not hasattr(self.sender, "_send_raw"):
+            return
+        try:
+            self.sender._send_raw(self.sender.SERVERDATA_EXECCOMMAND, "mp_tournament_redteamname")
+            r_id, r_type, body_red = self.sender._read_raw()
+            m_red = re.search(r'=\s*"([^"]*)"', body_red)
+            if m_red and m_red.group(1).strip():
+                raw = m_red.group(1).strip()
+                clean = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw.lower())
+                clean = re.sub(r'_+', '_', clean).strip('_')
+                if clean:
+                    self.current_red_team = clean
+        except Exception:
+            pass
+
+        try:
+            self.sender._send_raw(self.sender.SERVERDATA_EXECCOMMAND, "mp_tournament_blueteamname")
+            b_id, b_type, body_blu = self.sender._read_raw()
+            m_blu = re.search(r'=\s*"([^"]*)"', body_blu)
+            if m_blu and m_blu.group(1).strip():
+                raw = m_blu.group(1).strip()
+                clean = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw.lower())
+                clean = re.sub(r'_+', '_', clean).strip('_')
+                if clean:
+                    self.current_blu_team = clean
+        except Exception:
+            pass
+
+    def format_demo_name(self, now=None) -> str:
+        """Formats the demo filename using % % indicators according to the classic P-REC convention.
+        Default pattern: %date%_%time%_%map%_%red%_%blu%
+        Produces e.g.: 20200906_2253_koth_coalplant_b8_red_blu
         """
-        if self.cfg.prec_tag:
-            tag = self.cfg.prec_tag.strip()
-            if "{map}" in tag and self.current_map:
-                tag = tag.replace("{map}", self.current_map)
-            return tag.rstrip("_") + "_"
+        import datetime
+        if not now:
+            now = datetime.datetime.now()
 
-        # Default scheme: <mapname>_<date>_<time>
-        if self.current_map:
-            if self.is_scrim:
-                return f"{self.current_map}_scrim_"
-            return f"{self.current_map}_"
+        template = self.cfg.prec_demo_name if self.cfg.prec_demo_name else "%date%_%time%_%map%_%red%_%blu%"
 
-        # Fallback if map not yet detected
-        fallback = self.active_profile.get("scrim_prefix", "scrim") if self.is_scrim else self.active_profile.get("prefix", "match")
-        return f"{fallback}_"
+        clean_map = re.sub(r'[^a-zA-Z0-9_\-]', '_', (self.current_map or "unknown_map").strip().lower())
+        clean_map = re.sub(r'_+', '_', clean_map).strip('_') or "unknown_map"
+
+        clean_red = re.sub(r'[^a-zA-Z0-9_\-]', '_', (self.current_red_team or "red").strip().lower())
+        clean_red = re.sub(r'_+', '_', clean_red).strip('_') or "red"
+
+        clean_blu = re.sub(r'[^a-zA-Z0-9_\-]', '_', (self.current_blu_team or "blu").strip().lower())
+        clean_blu = re.sub(r'_+', '_', clean_blu).strip('_') or "blu"
+
+        clean_tag = re.sub(r'[^a-zA-Z0-9_\-]', '_', (self.cfg.prec_tag or "").strip().lower())
+        clean_tag = re.sub(r'_+', '_', clean_tag).strip('_')
+
+        clean_league = re.sub(r'[^a-zA-Z0-9_\-]', '_', (self.cfg.prec_league or "match").strip().lower())
+        clean_league = re.sub(r'_+', '_', clean_league).strip('_') or "match"
+
+        tokens = {
+            "%date%": now.strftime("%Y%m%d"),
+            "%time%": now.strftime("%H%M"),
+            "%map%": clean_map,
+            "%red%": clean_red,
+            "%blu%": clean_blu,
+            "%league%": clean_league,
+            "%tag%": clean_tag,
+            "%year%": now.strftime("%Y"),
+            "%month%": now.strftime("%m"),
+            "%day%": now.strftime("%d"),
+            "%hour%": now.strftime("%H"),
+            "%min%": now.strftime("%M"),
+            "%sec%": now.strftime("%S"),
+        }
+
+        result = template
+        for token, val in tokens.items():
+            result = re.sub(re.escape(token), val, result, flags=re.I)
+
+        if self.is_scrim and "_scrim" not in result.lower():
+            result = f"{result}_scrim"
+
+        result = re.sub(r'_+', '_', result).strip('_')
+        return result or f"{now.strftime('%Y%m%d_%H%M')}_{clean_map}"
+
+    def get_demo_prefix(self) -> str:
+        """Determines the demo prefix for TF2 Demo Support."""
+        name = self.format_demo_name()
+        return f"{name}_"
 
     def apply_league_cvars(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
@@ -2262,20 +2336,29 @@ class PrecEngine:
         self.last_record_toggle = now
         self.is_recording = True
         sub_type = "Scrim Practice" if self.is_scrim else "Official Match"
+
+        # Query tournament team names (e.g. Froyotech, Witness Gaming, red, blu)
+        self.query_tournament_teams()
+
+        demo_name = self.format_demo_name()
+        self.current_demo_name = demo_name
+        demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
+        demo_rel_path = f"{demo_dir}/{demo_name}" if demo_dir else demo_name
+
         print(f"\n[{APP_NAME}] >>> START RECORDING <<< ({sub_type}: {reason})", flush=True)
+        print(f"[{APP_NAME}] Demo filename: {demo_name}.dem (Target: tf/{demo_rel_path}.dem)", flush=True)
 
-        # Ensure latest prefix (with mapname) is applied before recording begins
-        prefix = self.get_demo_prefix()
-        if prefix:
-            self.send_cmd(f'ds_prefix "{prefix}"')
+        # Set ds_prefix for demo support compliance
+        self.send_cmd(f'ds_prefix "{demo_name}_"')
 
+        # Record demo with exact name using Source Engine record command
         if self.active_profile.get("server_demo_checker_bypass"):
-            self.send_cmd("ds_stop; ds_record")
+            self.send_cmd(f'stop; ds_stop; record "{demo_rel_path}"')
         else:
-            self.send_cmd("ds_record")
+            self.send_cmd(f'record "{demo_rel_path}"')
 
         self.send_cmd(f'echo "[P-REC External] >>> RECORDING STARTED ({sub_type}: {reason}) <<<"')
-        self.send_cmd(f'echo "[P-REC External] Target demo directory: tf/{self.cfg.prec_dir}/"')
+        self.send_cmd(f'echo "[P-REC External] Target demo: tf/{demo_rel_path}.dem"')
 
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_start:
             msg = self.cfg.pr_message_start
@@ -2285,7 +2368,7 @@ class PrecEngine:
 
         self.play_sound(is_start=True)
         if hasattr(self, "tray") and self.tray:
-            self.tray.update_status(f"Recording ({sub_type})")
+            self.tray.update_status(f"Recording ({self.current_demo_name})")
 
     def stop_recording(self, reason="Match Finished"):
         now = time.time()
@@ -2303,9 +2386,11 @@ class PrecEngine:
             self.send_cmd("status; jpeg")
             time.sleep(0.4)
 
-        self.send_cmd("ds_stop")
+        self.send_cmd("stop; ds_stop")
+        demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
+        print(f"[{APP_NAME}] Demo finalized and saved: tf/{demo_dir}/{self.current_demo_name}.dem", flush=True)
         self.send_cmd(f'echo "[P-REC External] >>> RECORDING STOPPED ({reason}) <<<"')
-        self.send_cmd(f'echo "[P-REC External] Demo finalized and saved in tf/{self.cfg.prec_dir}/"')
+        self.send_cmd(f'echo "[P-REC External] Demo finalized: tf/{demo_dir}/{self.current_demo_name}.dem"')
 
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_stop:
             msg = self.cfg.pr_message_stop
@@ -2337,6 +2422,22 @@ class PrecEngine:
                 prefix = self.get_demo_prefix()
                 if prefix:
                     self.send_cmd(f'ds_prefix "{prefix}"')
+
+        red_match = re.search(r'mp_tournament_redteamname(?: changed to)?\s+"?([^"\n\r]+)"?', line, re.I)
+        if red_match:
+            raw = red_match.group(1).strip()
+            clean = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw.lower())
+            clean = re.sub(r'_+', '_', clean).strip('_')
+            if clean:
+                self.current_red_team = clean
+
+        blu_match = re.search(r'mp_tournament_blueteamname(?: changed to)?\s+"?([^"\n\r]+)"?', line, re.I)
+        if blu_match:
+            raw = blu_match.group(1).strip()
+            clean = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw.lower())
+            clean = re.sub(r'_+', '_', clean).strip('_')
+            if clean:
+                self.current_blu_team = clean
 
         conn_match = re.search(r"Connecting to\s+([0-9\.\:]+)", line)
         if conn_match:
