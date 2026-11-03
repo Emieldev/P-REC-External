@@ -1,0 +1,18 @@
+{
+  "id": "matcha",
+  "name": "Matcha.tf (Asia/Pacific League & PUGs)",
+  "rules_url": "https://rules.matcha.tf/",
+  "prefix": "matcha",
+  "ds_enable": 0,
+  "ds_autodelete": 0,
+  "ds_screens": 1,
+  "mandatory_status_screenshot": true,
+  "server_config_patterns": [
+    "matcha_(6v6|hl|koth|5cp)",
+    "\\[Matcha\\]"
+  ],
+  "chat_triggers": [
+    "Both teams are ready",
+    "Match is LIVE"
+  ]
+}
