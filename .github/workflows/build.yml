@@ -21,7 +21,7 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
       - name: Build Executable
-        run: pyinstaller --onefile --noupx --version-file="version_info.txt" --name prec64 --icon="assets/supreme_soviet.ico" --add-data "leagues;leagues" --add-data "assets;assets" --clean --noconfirm prec64.py
+        run: pyinstaller --onefile --noupx --version-file="version_info.txt" --manifest="prec64.manifest" --name prec64 --icon="assets/supreme_soviet.ico" --add-data "leagues;leagues" --add-data "assets;assets" --clean --noconfirm prec64.py
       - name: Upload Windows Binary
         uses: actions/upload-artifact@v7
         with:

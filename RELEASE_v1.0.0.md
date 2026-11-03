@@ -10,37 +10,31 @@
 ### 💡 Why This Exists (The Vibecoded Backstory)
 > *"I got completely fed up with **PeachREC being shit** (causing microstutters and frame drops with synchronous HUD animation loops) and the original **P-REC not working** on modern 64-bit TF2 without `-insecure` (which VAC bans match servers). So I vibecoded this companion for myself to have zero game lag, zero warmup bloat, and total competitive league compliance."*
 
-⚠️ **Disclaimer:** This project is 100% community vibecoded with AI. While architecturally **100% VAC-safe** (using official Source Engine RCON & Netcon loopback sockets with zero memory tampering and zero DLL injection), always test during scrims before major tournament matches!
+⚠️ **Disclaimer:** This project is 100% community vibecoded with AI. While architecturally **100% VAC-safe** (using official Source Engine RCON loopback sockets with zero memory tampering and zero DLL injection), always test during scrims before major tournament matches!
 
 ---
 
-### ⚡ Key Highlights
+### ⚡ Key Features
 * **0 FPS Impact / Zero Lag:** Runs 100% externally out-of-process. Touches 0 HUD animations and 0 VGUI panels.
 * **Zero Warmup Bloat:** Records strictly when the tournament countdown goes live.
-* **100% VAC-Safe:** Connects via official engine sockets. Zero DLL injection or memory hooks.
+* **100% VAC-Safe:** Connects via official engine loopback sockets. Zero DLL injection or memory hooks.
 * **🛡️ Windows System Tray:** Lives quietly in Hidden Pictograms with the TF2 **Supreme Soviet** icon.
-* **🔍 Connection Diagnostics:** Click "Check RCON / Connection" in the tray to test communication at any time.
+* **🖥️ Desktop Shortcut & Startup:** Option to place a Desktop shortcut and auto-start silently on login.
+* **🔍 Live Connection Diagnostics:** Click "Check Connection" in the tray at any time to verify communication.
 * **Reassuring In-Game Console Messages:** Announces connection, active league, and recording start/stop in TF2 console (`~`).
 * **Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
 * **Multi-League Rulesets:** Dedicated compliance for **ETF2L** (Rule 2.1), **AsiaFortress**, **RGL** (1008.5), **ozfortress**, **Matcha.tf**, and **CLTF2**.
-* **Auto-Updater:** Built-in semantic version checking and automatic self-updates.
 * **DemoMan Integration:** Automatically discovers DemoMan's active RCON password and TF2 path.
 
 ---
 
-### 🚀 Steam Launch Options (Choose One)
-Add either of these to the end of your existing Launch Options in Steam:
+### 🚀 Steam Launch Options
+Add this to the end of your Launch Options in Steam (TF2 Properties -> General):
 
-* **Option 1: RCON Mode (Recommended - identical to DemoMan):**
-  ```text
-  -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
-  ```
-  *(If you already run [DemoMan](https://github.com/DemomanApp/DemoMan), you already have this in Steam!)*
-
-* **Option 2: Netcon Mode (Ultra-Short, 16 characters):**
-  ```text
-  -netconport 2121
-  ```
+```text
+-usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
+```
+*(If you already run [DemoMan](https://github.com/DemomanApp/DemoMan), you already have this in Steam!)*
 
 ---
 
@@ -49,7 +43,7 @@ Add either of these to the end of your existing Launch Options in Steam:
 * **Linux (64-bit Standalone ELF Binary):** [`prec64`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.0/prec64)
 * **Configuration File:** [`PREC_Settings.cfg`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.0/PREC_Settings.cfg)
 
-📖 **Full Setup Guide, League Instructions, and Documentation:** See the [README.md](https://github.com/Emieldev/P-REC-External/blob/main/README.md).
+📖 **Full Setup Guide & Documentation:** See [README.md](https://github.com/Emieldev/P-REC-External/blob/main/README.md).
 
 ---
 

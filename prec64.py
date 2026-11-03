@@ -40,10 +40,10 @@ import urllib.request
 from pathlib import Path
 
 APP_NAME = "P-REC External"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.0"
 APP_FULL_TITLE = f"P-REC External v{APP_VERSION}"
 GITHUB_REPO = "Emieldev/P-REC-External"
-DEFAULT_CONFIG_FILES = ["PREC_Settings.cfg", "Settings.cfg"]
+DEFAULT_CONFIG_FILES = ["PREC_Settings.cfg"]
 
 # ====================================================================
 # Modular League Profiles (Fallbacks + Dynamic JSON Loader)
@@ -398,6 +398,41 @@ prec_tf_path             ""
 # ====================================================================
 # Directory & Process Helpers (with DemoMan Auto-Detection)
 # ====================================================================
+
+def is_tf2_running():
+    """
+    Checks if Team Fortress 2 is currently running.
+    Returns (running_bool, process_name, pid).
+    """
+    target_names = {
+        "tf_win64.exe", "tf.exe", "hl2.exe",
+        "tf_linux64", "hl2_linux", "tf"
+    }
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output("tasklist /NH /FO CSV", shell=True).decode("latin1", "ignore")
+            for line in out.splitlines():
+                if line.strip():
+                    parts = line.split(",")
+                    pname = parts[0].strip('"').lower()
+                    if pname in target_names or "tf_win64" in pname:
+                        pid = parts[1].strip('"') if len(parts) > 1 else "?"
+                        return True, pname, pid
+        except Exception:
+            pass
+    else:
+        try:
+            out = subprocess.check_output(["pgrep", "-a", "tf"], text=True)
+            for line in out.splitlines():
+                parts = line.split(None, 1)
+                pid = parts[0]
+                cmd = parts[1] if len(parts) > 1 else ""
+                if any(t in cmd.lower() for t in target_names):
+                    return True, Path(cmd.split()[0]).name, pid
+        except Exception:
+            pass
+    return False, None, None
+
 
 def detect_demoman_config():
     """
@@ -877,6 +912,8 @@ ds_sound 1               // Audio cue on start/stop
 ds_screens 1             // Screenshot at match end (ETF2L compliance)
 ds_autodelete 0          // CRITICAL: League compliance, never delete match demos
 bind "F8" "ds_mark"      // Optional bookmark key
+sv_rcon_whitelist_address "127.0.0.1" // Prevent localhost from being banned by Source engine
+removeip 127.0.0.1       // Clear any temporary localhost ban
 exec {cfg_filename}   // Load P-REC chat message aliases
 """
 
@@ -1447,17 +1484,24 @@ class SourceRcon:
         self.req_id = 1
         self.lock = threading.Lock()
 
-    def connect(self, timeout=3.0):
+    def connect(self, timeout=3.0, verbose=False):
         self.close()
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(timeout)
+        if verbose:
+            print(f"[RCON DEBUG] Connecting to TCP {self.host}:{self.port}...", flush=True)
         s.connect((self.host, self.port))
         self.sock = s
         auth_req_id = self._send_raw(self.SERVERDATA_AUTH, self.password)
+        if verbose:
+            print(f"[RCON DEBUG] Sent SERVERDATA_AUTH (packet_id={auth_req_id}). Waiting for engine response...", flush=True)
         # Source RCON protocol flow: servers first send an empty SERVERDATA_RESPONSE_VALUE (type 0),
         # followed immediately by SERVERDATA_AUTH_RESPONSE (type 2).
-        while True:
-            resp_id, resp_type, _ = self._read_raw()
+        start_t = time.time()
+        while time.time() - start_t < timeout:
+            resp_id, resp_type, body = self._read_raw()
+            if verbose:
+                print(f"[RCON DEBUG] Received packet: id={resp_id}, type={resp_type}, body_len={len(body)}", flush=True)
             if resp_type == self.SERVERDATA_AUTH_RESPONSE:
                 if resp_id == -1 or resp_id != auth_req_id:
                     self.close()
@@ -1471,24 +1515,28 @@ class SourceRcon:
         return True
 
     def _send_raw(self, packet_type, body):
-        self.req_id += 1
+        self.req_id = (self.req_id + 1) % 0x7FFFFFFF or 1
         payload = body.encode("utf-8", errors="replace") + b"\x00\x00"
         packet_size = 4 + 4 + len(payload)
         packet = struct.pack("<iii", packet_size, self.req_id, packet_type) + payload
         self.sock.sendall(packet)
         return self.req_id
 
-    def _read_raw(self):
-        size_header = self.sock.recv(4)
-        if not size_header or len(size_header) < 4:
-            raise ConnectionResetError("RCON socket disconnected")
-        size = struct.unpack("<i", size_header)[0]
-        data = b""
-        while len(data) < size:
-            chunk = self.sock.recv(size - len(data))
+    def _recv_exact(self, n):
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = self.sock.recv(n - len(buf))
             if not chunk:
-                break
-            data += chunk
+                raise ConnectionResetError("RCON connection closed by remote host")
+            buf.extend(chunk)
+        return bytes(buf)
+
+    def _read_raw(self):
+        size_header = self._recv_exact(4)
+        size = struct.unpack("<i", size_header)[0]
+        if size < 10 or size > 65536:
+            raise ValueError(f"Invalid RCON packet size: {size}")
+        data = self._recv_exact(size)
         req_id, packet_type = struct.unpack("<ii", data[:8])
         body = data[8:-2].decode("utf-8", errors="replace")
         return req_id, packet_type, body
@@ -1580,12 +1628,20 @@ class ConsoleLogTailer:
 
         with open(self.log_path, "r", encoding="utf-8", errors="replace") as f:
             f.seek(0, os.SEEK_END)
+            last_proc_check = time.time()
             while self.running:
                 line = f.readline()
                 if line:
                     yield line.strip("\r\n")
                 else:
                     time.sleep(0.05)
+                    now = time.time()
+                    if now - last_proc_check > 3.0:
+                        last_proc_check = now
+                        running, _, _ = is_tf2_running()
+                        if not running:
+                            print(f"\n[{APP_NAME}] Team Fortress 2 process exited.", flush=True)
+                            break
 
     def stop(self):
         self.running = False
@@ -2038,7 +2094,12 @@ class PrecEngine:
             print("[RESULT] In-game confirmation sent to TF2 developer console (~).", flush=True)
             print("[RESULT] Connection is fully operational!\n", flush=True)
         else:
+            tf_running, tf_pname, tf_pid = is_tf2_running()
             print("[STATUS] Not currently connected to Team Fortress 2.", flush=True)
+            if tf_running:
+                print(f"[STATUS] Team Fortress 2 IS RUNNING! (Process: {tf_pname}, PID: {tf_pid})", flush=True)
+            else:
+                print("[STATUS] Team Fortress 2 process is not currently running.", flush=True)
             print("P-REC External is probing ports on localhost...", flush=True)
 
             # Probe Netcon
@@ -2054,20 +2115,38 @@ class PrecEngine:
 
             # Probe RCON
             rcon_ok = False
+            rcon_error = None
             try:
                 rc = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password)
-                rc.connect(timeout=0.8)
+                rc.connect(timeout=1.2, verbose=True)
                 rc.close()
                 rcon_ok = True
                 print(f"  [+] RCON (Port {self.cfg.prec_rcon_port}): PORT OPEN! Password authenticated successfully.", flush=True)
             except Exception as e:
-                print(f"  [-] RCON (Port {self.cfg.prec_rcon_port}): Port closed or password mismatch ({e}).", flush=True)
+                rcon_error = e
+                print(f"  [-] RCON (Port {self.cfg.prec_rcon_port}): Failed ({e}).", flush=True)
 
             if not netcon_ok and not rcon_ok:
-                print("\n[DIAGNOSIS] Team Fortress 2 is either not running yet, or missing launch options.", flush=True)
-                print("Make sure you have ONE of these set in TF2 Launch Options in Steam:\n", flush=True)
-                print(f"Option 1 (RCON):   -condebug -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start", flush=True)
-                print(f"Option 2 (Netcon): -netconport {self.cfg.prec_netcon_port}\n", flush=True)
+                if not tf_running:
+                    print("\n[DIAGNOSIS] Team Fortress 2 is not currently running.", flush=True)
+                    print("Start TF2 from Steam with these Launch Options:\n", flush=True)
+                    print(f"  -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start\n", flush=True)
+                else:
+                    err_str = str(rcon_error)
+                    if "10054" in err_str or "Connection reset" in err_str or "10053" in err_str or "closed by remote" in err_str:
+                        print(f"\n[DIAGNOSIS] TF2 is running on PID {tf_pid}, but reset the connection on port {self.cfg.prec_rcon_port}.", flush=True)
+                        print("  Cause: TF2's internal flood protection temporarily banned 127.0.0.1 due to earlier connection attempts,", flush=True)
+                        print("         or the game needs the whitelist address cvar active.", flush=True)
+                        print("  FIX: Open TF2 in-game console (~) and enter:", flush=True)
+                        print("       removeip 127.0.0.1; sv_rcon_whitelist_address 127.0.0.1", flush=True)
+                        print("       Or simply restart Team Fortress 2.\n", flush=True)
+                    elif "PermissionError" in str(type(rcon_error)) or "rejected" in err_str:
+                        print(f"\n[DIAGNOSIS] TF2 is listening on port {self.cfg.prec_rcon_port}, but the password was rejected.", flush=True)
+                        print(f"  Check that 'rcon_password' in TF2 matches your settings password ({self.cfg.prec_rcon_password}).\n", flush=True)
+                    else:
+                        print(f"\n[DIAGNOSIS] TF2 is running on PID {tf_pid}, but port {self.cfg.prec_rcon_port} is not listening.", flush=True)
+                        print("  Make sure TF2 was launched with:", flush=True)
+                        print(f"  -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start\n", flush=True)
                 if hasattr(self, "tray") and self.tray:
                     self.tray.update_status("Waiting for TF2...")
                 self.play_sound(is_start=False)
@@ -2091,6 +2170,10 @@ class PrecEngine:
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
         mode_label = "SCRIM (Practice)" if self.is_scrim else "OFFICIAL MATCH"
         print(f"[{APP_NAME}] Applying cvars for: {prof_name} [{mode_label}]", flush=True)
+
+        # Immunize localhost and clear any transient bans
+        self.send_cmd('sv_rcon_whitelist_address "127.0.0.1"')
+        self.send_cmd("removeip 127.0.0.1")
 
         self.send_cmd(f'ds_dir "{self.cfg.prec_dir}"')
         self.send_cmd(f"ds_notify {self.cfg.prec_notify}")
