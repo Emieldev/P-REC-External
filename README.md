@@ -30,7 +30,8 @@
 | **0 FPS Impact / Zero Lag** | Runs completely out-of-process via engine network sockets. Touches **0 HUD animation manifests** and draws **0 VGUI panels**. | **PeachREC** runs synchronous animation loops on the main render thread, causing frame pacing jitter and microstutters. |
 | **100% VAC-Safe** | Uses official Source Engine RCON and Netcon protocols. Zero DLL injection, zero memory tampering. | **Original P-REC** cannot run on 64-bit TF2 without `-insecure` (which triggers VAC server bans and league disqualification). |
 | **Zero Warmup Bloat** | Listens to tournament countdown pulses and triggers recording **strictly when the match goes live**. | Valve's **`ds_enable 3`** starts recording the instant you join a server with `mp_tournament 1`, recording 30+ minutes of warmups and roll-calls. |
-| **🔔 Sleek Desktop Pop-ups** | Displays subtle bottom-right toast pop-ups with official TF2 *"That's a wrap!"* art. Uses Windows `WS_EX_NOACTIVATE` so it **never steals keyboard/mouse focus from TF2**. | In-game overlays often trigger Alt-Tab glitches, minimize fullscreen games, or cause input drops. |
+| **🛡️ System Tray (Hidden Pictograms)** | Runs smoothly in the Windows Notification Area under **Hidden Pictograms** with the crisp TF2 **Supreme Soviet** icon. Right-click for Settings, Custom Folder, or clean Exit! | Clutters your taskbar with open cmd windows. |
+| **🔔 Sleek Desktop Pop-ups** | Displays subtle bottom-right toast pop-ups with high-res TF2 **Supreme Soviet** art. Uses Windows `WS_EX_NOACTIVATE` so it **never steals keyboard/mouse focus from TF2**. | In-game overlays often trigger Alt-Tab glitches, minimize fullscreen games, or cause input drops. |
 | **⚡ Auto Profile Switching** | Automatically switches active league ruleset when an official tournament config is executed on the server. | Manual reconfiguration required in older tools. |
 | **🎯 Scrim vs. Match Handling** | Automatically differentiates between **practice scrims** (`_scrim` prefix, suppresses screenshot spam) and **official matches** (full compliance & status screenshots). | Other tools take useless status screenshots on every practice round. |
 | **🔍 DemoMan Auto-Detection** | Automatically discovers local [DemoMan](https://github.com/DemomanApp/DemoMan) installations, extracts its active RCON password and pre-fills your TF2 `/tf` path! | Zero manual port configuration or password hassle. |
@@ -38,6 +39,34 @@
 | **Crash & Reconnect Recovery** | Detects active tournament rounds if you crash and reconnect mid-match, resuming recording immediately. | Complies strictly with [ETF2L Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos). Built-in TF2 recording fails to resume if you reconnect. |
 | **Auto-Booting with TF2** | Seamless Steam launch option wrapper launches the recorder automatically whenever you click "Play" in Steam. | Never forget to record an official match again. |
 | **Centralized `tf/custom/` Install** | Installs cleanly into `tf/custom/P-REC/` for one-stop file management alongside your HUD and configs. | Keeps all your competitive files neatly organized in one folder. |
+
+---
+
+## 🛡️ Windows Background Program (Hidden Pictograms / System Tray)
+
+When running on Windows, P-REC External lives quietly in your system tray under the **Hidden Pictograms** (`^`) area with the **Supreme Soviet** icon (`assets/supreme_soviet.ico`):
+
+* **Left Double-Click:** Immediately opens [`PREC_Settings.cfg`](file:///h:/prec/PREC_Settings.cfg) in your default text editor (Notepad, VS Code, etc.).
+* **Right-Click Context Menu:**
+  * **Status Header:** Live connection and recording status (e.g. `P-REC External (Connected)`).
+  * **Show / Hide Console Window:** Toggles terminal window visibility if you ever want to check live logs.
+  * **Go to Settings (PREC_Settings.cfg):** Quick one-click configuration access.
+  * **Open tf/custom/ Folder:** Instantly opens your TF2 mods folder in File Explorer.
+  * **Close P-REC External:** Stops recording cleanly, frees ports, and shuts down the background process.
+
+---
+
+## 🔔 Sleek Bottom-Right Desktop Notifications
+
+P-REC External features non-intrusive desktop toast notifications in the bottom-right corner of your screen:
+* Features the high-res TF2 Heavy achievement icon: **Supreme Soviet** (`assets/supreme_soviet.png`).
+* **Zero-Focus Steal (`WS_EX_NOACTIVATE`):** Implemented via native Windows APIs to guarantee TF2 retains 100% active mouse and keyboard focus even during high-intensity 1v1 fights.
+* Alerts you when:
+  * TF2 connects or disconnects.
+  * Recording starts or stops.
+  * A bookmark is placed.
+  * A tournament config executes and auto-switches your league profile.
+* Can be toggled anytime with `prec_popup 1` / `prec_popup 0` in `PREC_Settings.cfg`.
 
 ---
 
@@ -55,27 +84,13 @@ Keeping faith with the classic **P-REC** heritage:
 
 ---
 
-## 🔔 Sleek Bottom-Right Desktop Notifications
-
-P-REC External features non-intrusive desktop toast notifications in the bottom-right corner of your screen:
-* Features the classic TF2 achievement icon: **"That's a wrap!"** (`assets/thats_a_wrap.png`).
-* **Zero-Focus Steal (`WS_EX_NOACTIVATE`):** Implemented via native Windows APIs to guarantee TF2 retains 100% active mouse and keyboard focus even during high-intensity 1v1 fights.
-* Alerts you when:
-  * Recording starts or stops.
-  * A bookmark is placed.
-  * A tournament config executes and auto-switches your league profile.
-  * P-REC connects to your TF2 instance.
-* Can be toggled anytime with `prec_popup 1` / `prec_popup 0` in `PREC_Settings.cfg`.
-
----
-
 ## ⚡ Dynamic Profile Switching & Scrim Mode
 
 ### 1. Automatic League Switching
 When connected to a competitive server, P-REC External inspects console output for executed tournament configs. If the server executes an ETF2L config, AsiaFortress config, RGL config, ozfortress config, Matcha config, or CLTF2 config, P-REC External **dynamically switches its active league profile** on the fly without restarting:
 ```text
-[P-REC] ⚡ AUTO-SWITCHED LEAGUE PROFILE: AsiaFortress (AsiaFortress Cup & League) [OFFICIAL MATCH]
-[P-REC] Triggered by config execution: af_6v6_5cp.cfg
+[P-REC External] ⚡ AUTO-SWITCHED LEAGUE PROFILE: AsiaFortress (AsiaFortress Cup & League) [OFFICIAL MATCH]
+[P-REC External] Triggered by config execution: af_6v6_5cp.cfg
 ```
 
 ### 2. Scrim Mode vs. Official Match Mode
@@ -250,6 +265,7 @@ All league rules are stored as independent JSON files in the [`leagues/`](file:/
 | `prec_dir` | `"demos"` | Folder inside `/tf/` where demo files are saved. |
 | `prec_sound` | `1` | `1` = Audio cue on start/stop, `0` = Mute. |
 | `prec_popup` | `1` | `1` = Show sleek bottom-right desktop notification, `0` = Off. |
+| `prec_hide_to_tray` | `1` | `1` = Hide console window into Windows System Tray (Hidden Pictograms), `0` = Keep console window open. |
 | `prec_screens` | `1` | `1` = Capture status & scoreboard screenshot at match end. Automatically suppressed during scrims. |
 | `prec_notify` | `1` | `0` = Console only, `1` = Team chat announcements, `2` = HUD notification. |
 | `prec_delete_useless_demo` | `0` | `0` = Never delete (strictly required for league compliance). |
