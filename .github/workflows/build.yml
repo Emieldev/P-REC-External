@@ -65,8 +65,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          name: P-REC External v1.0.0 — Zero-Lag Match Recorder for TF2 64-Bit (Windows & Linux)
+          body_path: README.md
           files: |
             release-assets/prec64.exe
             release-assets/prec64
             PREC_Settings.cfg
-          generate_release_notes: true

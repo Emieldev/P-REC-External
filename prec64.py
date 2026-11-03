@@ -36,11 +36,13 @@ import shutil
 import threading
 import secrets
 import subprocess
+import urllib.request
 from pathlib import Path
 
 APP_NAME = "P-REC External"
 APP_VERSION = "1.0.0"
 APP_FULL_TITLE = f"P-REC External v{APP_VERSION}"
+GITHUB_REPO = "Emieldev/P-REC-External"
 DEFAULT_CONFIG_FILES = ["PREC_Settings.cfg", "Settings.cfg"]
 
 # ====================================================================
@@ -717,11 +719,174 @@ def apply_cfg_update(cfg_path: Path, cfg_filename="PREC_Settings.cfg"):
         f.write(updated)
 
 
+def show_manual_cfg_instructions(cfg_file: Path, cfg_filename="PREC_Settings.cfg", tf_path: Path = None):
+    """
+    Displays explicit manual configuration instructions for a declined file,
+    including what lines to remove and what lines to add, and waits for user confirmation.
+    """
+    rel = cfg_file.name
+    if tf_path:
+        try:
+            rel = str(cfg_file.relative_to(tf_path))
+        except Exception:
+            pass
+
+    print("\n" + "=" * 65, flush=True)
+    print(f" [MANUAL CONFIGURATION REQUIRED] {rel}", flush=True)
+    print("=" * 65, flush=True)
+    print(f"Target Config File: {cfg_file.resolve()}\n", flush=True)
+    print("Because automatic configuration was declined, you must update this file manually:", flush=True)
+    print("\n1. LINES TO REMOVE (if present in the file):", flush=True)
+    print("   - Any PeachREC commands (causing main-thread stutter):", flush=True)
+    print("       exec peachrec", flush=True)
+    print("       hudanimations_peachrec.txt", flush=True)
+    print("   - Any legacy 32-bit plugin loaders (causes VAC server errors):", flush=True)
+    print("       plugin_load prec", flush=True)
+    print("       plugin_load ../bin/prec", flush=True)
+    print("\n2. LINES TO ADD (paste at the bottom of the file):", flush=True)
+    print("-" * 65, flush=True)
+    print(get_recommended_snippet(cfg_filename).strip(), flush=True)
+    print("-" * 65 + "\n", flush=True)
+
+    if sys.stdin.isatty():
+        while True:
+            confirm = input(f"Have you made and saved these changes to '{rel}' manually? [y/N]: ").strip().lower()
+            if confirm == 'y':
+                print(f"[OK] Confirmed manual changes for {rel}!\n", flush=True)
+                break
+            elif confirm == 'skip':
+                print(f"[SKIP] Proceeding without manual verification for {rel}.\n", flush=True)
+                break
+            else:
+                print(f"[WAIT] Please open '{cfg_file.resolve()}', apply the changes, save the file, then enter 'y' to continue (or 'skip').", flush=True)
+
+
+# ====================================================================
+# Auto-Update Detection & Self-Updater
+# ====================================================================
+
+def parse_semver(ver_str: str):
+    """Extracts numeric tuple (major, minor, patch) from version string (e.g. 'v1.0.1' -> (1, 0, 1))."""
+    nums = re.findall(r'\d+', str(ver_str))
+    return tuple(map(int, nums)) if nums else (0, 0, 0)
+
+
+def check_for_updates(interactive=True) -> dict:
+    """
+    Checks GitHub API for a newer release version.
+    If a newer release is detected:
+      - In interactive mode: displays release notes and prompts user to auto-download and update.
+      - In non-interactive mode: returns release info dict for background notification.
+    """
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    headers = {
+        "User-Agent": f"P-REC-External-Updater/{APP_VERSION}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception:
+        return {}
+
+    remote_tag = data.get("tag_name", "")
+    remote_ver = parse_semver(remote_tag)
+    current_ver = parse_semver(APP_VERSION)
+
+    if remote_ver <= current_ver:
+        return {}
+
+    release_name = data.get("name") or remote_tag
+    html_url = data.get("html_url", f"https://github.com/{GITHUB_REPO}/releases/latest")
+    assets = data.get("assets", [])
+
+    print("\n" + "=" * 65, flush=True)
+    print(f" [UPDATE AVAILABLE] A new version of {APP_NAME} is available!", flush=True)
+    print(f"   Latest Release:  {remote_tag} ({release_name})", flush=True)
+    print(f"   Current Version: v{APP_VERSION}", flush=True)
+    print(f"   Release Notes:   {html_url}", flush=True)
+    print("=" * 65, flush=True)
+
+    if not interactive or not sys.stdin.isatty():
+        return {
+            "version": remote_tag,
+            "name": release_name,
+            "url": html_url,
+            "assets": assets
+        }
+
+    is_win = sys.platform == "win32"
+    asset_name = "prec64.exe" if is_win else "prec64"
+    target_asset = next((a for a in assets if a.get("name") == asset_name), None)
+
+    prompt = f"Would you like to automatically download and update to {remote_tag} now? [Y/n]: "
+    user_choice = input(prompt).strip().lower()
+
+    if user_choice == 'n':
+        print("[UPDATE] Update deferred. You can update later from GitHub.\n", flush=True)
+        return {"version": remote_tag, "url": html_url}
+
+    if not target_asset or not target_asset.get("browser_download_url"):
+        print(f"[UPDATE] Direct binary '{asset_name}' not found in release assets.", flush=True)
+        print(f"Please download the update manually from: {html_url}\n", flush=True)
+        return {"version": remote_tag, "url": html_url}
+
+    download_url = target_asset["browser_download_url"]
+    file_size = target_asset.get("size", 0)
+    print(f"[UPDATE] Downloading {asset_name} ({file_size // 1024} KB)...", flush=True)
+
+    current_bin = Path(sys.executable) if getattr(sys, 'frozen', False) else Path(__file__).resolve()
+    temp_download = current_bin.with_suffix(".new")
+
+    try:
+        req_dl = urllib.request.Request(download_url, headers={"User-Agent": f"P-REC-External-Updater/{APP_VERSION}"})
+        with urllib.request.urlopen(req_dl) as resp_dl, open(temp_download, "wb") as f_out:
+            shutil.copyfileobj(resp_dl, f_out)
+
+        if not is_win:
+            os.chmod(temp_download, 0o755)
+
+        if is_win:
+            old_backup = current_bin.with_suffix(".old")
+            if old_backup.exists():
+                try:
+                    old_backup.unlink()
+                except Exception:
+                    pass
+            os.rename(current_bin, old_backup)
+            os.rename(temp_download, current_bin)
+        else:
+            os.replace(temp_download, current_bin)
+
+        print("\n" + "=" * 65, flush=True)
+        print(f" [SUCCESS] Successfully updated {APP_NAME} to {remote_tag}!", flush=True)
+        print(" Restarting application with the updated version...", flush=True)
+        print("=" * 65 + "\n", flush=True)
+
+        subprocess.Popen([str(current_bin)] + sys.argv[1:])
+        sys.exit(0)
+    except Exception as e:
+        print(f"[ERROR] Auto-update failed: {e}", flush=True)
+        print(f"Please manually download the update from: {html_url}\n", flush=True)
+        if temp_download.exists():
+            try:
+                temp_download.unlink()
+            except Exception:
+                pass
+
+    return {"version": remote_tag, "url": html_url}
+
+
 # ====================================================================
 # Interactive First-Time Installation Wizard
 # ====================================================================
 
 def run_setup_wizard():
+    # Check for latest releases before beginning setup
+    if sys.stdin.isatty():
+        check_for_updates(interactive=True)
+
     print("\n" + "=" * 65, flush=True)
     print(f"      {APP_FULL_TITLE}       ", flush=True)
     print("      Interactive Setup & Configuration Wizard       ", flush=True)
@@ -905,14 +1070,17 @@ def run_setup_wizard():
                     apply_cfg_update(cand, cfg_target.name)
                     print(f"[OK] Updated {rel}", flush=True)
                 else:
-                    print(f"[SKIP] Skipped {rel}", flush=True)
+                    print(f"[SKIP] Automatic update declined for {rel}.", flush=True)
+                    show_manual_cfg_instructions(cand, cfg_target.name, tf_path)
         elif apply_mode != "3":
             # Bulk
             for cand in cfg_candidates:
                 apply_cfg_update(cand, cfg_target.name)
                 print(f"[OK] Updated {cand.relative_to(tf_path)}", flush=True)
         else:
-            print("[SKIP] Skipped updating cfg files.", flush=True)
+            print("\n[SKIP] Automatic updates declined for all files.", flush=True)
+            for cand in cfg_candidates:
+                show_manual_cfg_instructions(cand, cfg_target.name, tf_path)
 
     # 9. Output Steam Launch Option
     print("\n" + "=" * 65, flush=True)
@@ -1318,7 +1486,8 @@ class WindowsSystemTray:
             ID_TOGGLE_CONSOLE = 1002
             ID_SETTINGS = 1003
             ID_CUSTOM_DIR = 1004
-            ID_EXIT = 1005
+            ID_UPDATE = 1005
+            ID_EXIT = 1006
 
             class NOTIFYICONDATAW(ctypes.Structure):
                 _fields_ = [
@@ -1368,6 +1537,11 @@ class WindowsSystemTray:
                 user32.EnableMenuItem(h_menu, ID_STATUS, MF_GRAYED)
                 user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
 
+                if getattr(self, "available_update", None):
+                    up_text = f"⚡ Update to {self.available_update.get('version', 'New Release')}"
+                    user32.AppendMenuW(h_menu, MF_STRING, ID_UPDATE, up_text)
+                    user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
+
                 console_label = "Hide Console Window" if self.console_visible else "Show Console Window"
                 user32.AppendMenuW(h_menu, MF_STRING, ID_TOGGLE_CONSOLE, console_label)
                 user32.AppendMenuW(h_menu, MF_STRING, ID_SETTINGS, "Go to Settings (PREC_Settings.cfg)")
@@ -1391,7 +1565,13 @@ class WindowsSystemTray:
                     return 0
                 elif msg == WM_COMMAND:
                     cmd_id = wintypes.LOWORD(wparam)
-                    if cmd_id == ID_TOGGLE_CONSOLE:
+                    if cmd_id == ID_UPDATE:
+                        if getattr(self, "available_update", None) and self.available_update.get("url"):
+                            try:
+                                os.startfile(self.available_update["url"])
+                            except Exception:
+                                pass
+                    elif cmd_id == ID_TOGGLE_CONSOLE:
                         self.toggle_console()
                     elif cmd_id == ID_SETTINGS:
                         self.open_settings()
@@ -1496,6 +1676,17 @@ class PrecEngine:
         if getattr(self.cfg, "prec_hide_to_tray", 1) and sys.platform == "win32":
             if not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
                 self.tray.hide_console()
+
+        # Background update check
+        def _bg_update_check():
+            try:
+                info = check_for_updates(interactive=False)
+                if info and self.tray:
+                    self.tray.available_update = info
+                    self.tray.update_status(f"Update: {info.get('version')}")
+            except Exception:
+                pass
+        threading.Thread(target=_bg_update_check, daemon=True).start()
 
     def stop_all(self):
         print(f"\n[{APP_NAME}] Exit requested from System Tray. Shutting down...", flush=True)
@@ -1853,6 +2044,9 @@ def find_existing_config():
 
 if __name__ == "__main__":
     force_wizard = "--install" in sys.argv or "--setup" in sys.argv
+
+    if sys.stdin.isatty() and not force_wizard and not any(arg in sys.argv for arg in ("--no-update", "--daemon")):
+        check_for_updates(interactive=True)
 
     if force_wizard:
         cfg_path = run_setup_wizard()
