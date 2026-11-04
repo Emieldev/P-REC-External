@@ -451,6 +451,8 @@ alias prec_mode                  ""
 alias prec_dir                   ""
 alias prec_sound                 ""
 alias prec_screens               ""
+alias prec_status                ""
+alias prec_screenshot            ""
 alias prec_notify                ""
 alias prec_tag                   ""
 alias prec_demo_name             ""
@@ -1751,6 +1753,8 @@ alias prec_mode                  ""
 alias prec_dir                   ""
 alias prec_sound                 ""
 alias prec_screens               ""
+alias prec_status                ""
+alias prec_screenshot            ""
 alias prec_notify                ""
 alias prec_tag                   ""
 alias prec_demo_name             ""
@@ -3442,8 +3446,12 @@ class PrecEngine:
             pass
 
     def capture_status_screenshot(self, trigger_type="Mid-Game (3+ mins)"):
-        """Captures in-game status & screenshot via Source engine RCON (status; jpeg)."""
-        if not self.is_recording:
+        """
+        Captures in-game console status screenshot via Source engine.
+        Briefly displays the developer console, outputs 'status' with all player SteamIDs,
+        snaps a jpeg screenshot, and hides the console back to gameplay.
+        """
+        if not self.is_recording or self.status_screenshot_taken:
             return
 
         should_screen = (self.cfg.prec_screens and not self.is_scrim) or (
@@ -3452,10 +3460,25 @@ class PrecEngine:
         if not should_screen:
             return
 
-        print(f"\n[{APP_NAME}] Capturing mandatory status screenshot ({trigger_type})...", flush=True)
-        self.send_cmd("status; jpeg")
-        self.send_cmd(f'echo "[P-REC External] Status screenshot captured ({trigger_type})"')
         self.status_screenshot_taken = True
+
+        def _worker():
+            try:
+                print(f"\n[{APP_NAME}] 📸 Capturing official status screenshot ({trigger_type})...", flush=True)
+                # Open developer console and output fresh status with SteamIDs
+                self.send_cmd("con_enable 1; showconsole; status")
+                time.sleep(0.35)
+                # Capture in-game screenshot showing the console status window
+                self.send_cmd("jpeg")
+                time.sleep(0.15)
+                # Hide developer console back to game
+                self.send_cmd("hideconsole")
+                self.send_cmd(f'echo "[P-REC External] Status screenshot captured ({trigger_type})"')
+                print(f"[{APP_NAME}] ✅ Status screenshot captured successfully into tf/screenshots/!", flush=True)
+            except Exception as e:
+                print(f"[{APP_NAME} ERROR] Failed to capture status screenshot: {e}", flush=True)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def schedule_status_screenshot(self):
         """Schedules random in-game status screenshot after 3 minutes of play (ETF2L Rule 2.1 compliance)."""
@@ -3590,10 +3613,10 @@ class PrecEngine:
         if should_screen:
             if not self.status_screenshot_taken:
                 self.capture_status_screenshot("Match End Fallback")
-                time.sleep(0.4)
+                time.sleep(0.7)
             elif self.cfg.prec_screens >= 1:
                 print(f"[{APP_NAME}] Capturing match end scoreboard screenshot...", flush=True)
-                self.send_cmd("status; jpeg")
+                self.send_cmd("jpeg")
                 time.sleep(0.4)
 
         self.match_start_time = 0.0
@@ -3643,6 +3666,10 @@ class PrecEngine:
     def process_console_line(self, line):
         if not line:
             return
+
+        # Manual status screenshot trigger (e.g. prec_status, prec_screenshot, ds_status)
+        if re.search(r'^\s*(?:prec_status|prec_screenshot|ds_status)\b', line.strip(), re.I):
+            self.capture_status_screenshot("Manual In-Game Trigger")
 
         # Dynamic In-Game Cvar / Setting Execution (e.g. prec_mode 3, prec_dir matches, ds_dir ...)
         cvar_match = re.search(r'^\s*(prec_[a-zA-Z0-9_]+|ds_[a-zA-Z0-9_]+)\s+["\']?([^"\'\n\r]+)["\']?', line.strip(), re.I)
