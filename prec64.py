@@ -347,7 +347,9 @@ class PrecConfig:
                 elif key in ("prec_mode", "mode"):
                     self.prec_mode = int(val)
                 elif key in ("prec_dir", "dir", "ds_dir"):
-                    self.prec_dir = val
+                    # Security: sanitize directory path against traversal and illegal characters
+                    clean_dir = re.sub(r'[\/\\:\*\?"<>\|]', '_', val).strip('_. ')
+                    self.prec_dir = clean_dir or "demos"
                 elif key in ("prec_sound", "sound", "ds_sound"):
                     self.prec_sound = int(val)
                 elif key in ("prec_sound_start", "sound_start"):
@@ -557,6 +559,8 @@ removeip 127.0.0.1
 def is_tf2_running():
     """
     Checks if Team Fortress 2 is currently running.
+    Uses high-speed zero-subprocess Win32 Toolhelp snapshot on Windows (< 0.5ms),
+    falling back to tasklist or Linux procfs.
     Returns (running_bool, process_name, pid).
     """
     target_names = {
@@ -565,7 +569,46 @@ def is_tf2_running():
     }
     if sys.platform == "win32":
         try:
-            out = subprocess.check_output("tasklist /NH /FO CSV", shell=True).decode("latin1", "ignore")
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.windll.kernel32
+            TH32CS_SNAPPROCESS = 0x00000002
+
+            class PROCESSENTRY32(ctypes.Structure):
+                _fields_ = [
+                    ('dwSize', wintypes.DWORD),
+                    ('cntUsage', wintypes.DWORD),
+                    ('th32ProcessID', wintypes.DWORD),
+                    ('th32DefaultHeapID', ctypes.c_size_t),
+                    ('th32ModuleID', wintypes.DWORD),
+                    ('cntThreads', wintypes.DWORD),
+                    ('th32ParentProcessID', wintypes.DWORD),
+                    ('pcPriClassBase', wintypes.LONG),
+                    ('dwFlags', wintypes.DWORD),
+                    ('szExeFile', ctypes.c_char * 260)
+                ]
+
+            hSnapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+            if hSnapshot and hSnapshot != -1:
+                pe = PROCESSENTRY32()
+                pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+                if kernel32.Process32First(hSnapshot, ctypes.byref(pe)):
+                    while True:
+                        pname = pe.szExeFile.decode('utf-8', 'ignore').lower()
+                        if pname in target_names or pname.startswith("tf_win64"):
+                            pid = str(pe.th32ProcessID)
+                            kernel32.CloseHandle(hSnapshot)
+                            return True, pname, pid
+                        if not kernel32.Process32Next(hSnapshot, ctypes.byref(pe)):
+                            break
+                kernel32.CloseHandle(hSnapshot)
+                return False, None, None
+        except Exception:
+            pass
+
+        # Fallback to tasklist if ctypes snapshot fails
+        try:
+            out = subprocess.check_output(["tasklist", "/NH", "/FO", "CSV"], text=True, errors="ignore")
             for line in out.splitlines():
                 if line.strip():
                     parts = line.split(",")
@@ -2266,6 +2309,9 @@ class NetconClient:
                 while "\n" in buffer:
                     line, buffer = buffer.split("\n", 1)
                     yield line.strip("\r")
+                # Prevent unbounded memory growth if stream sends no newlines
+                if len(buffer) > 65536:
+                    buffer = buffer[-4096:]
             except Exception:
                 break
         self.close()
@@ -2306,6 +2352,13 @@ class ConsoleLogTailer:
                 else:
                     time.sleep(0.05)
                     now = time.time()
+                    # Resilient log-truncation detection across map changes
+                    try:
+                        if self.log_path.stat().st_size < f.tell():
+                            f.seek(0, os.SEEK_SET)
+                    except OSError:
+                        pass
+
                     if now - last_proc_check > 3.0:
                         last_proc_check = now
                         running, _, _ = is_tf2_running()
@@ -3094,7 +3147,7 @@ class PrecEngine:
         self.last_cfg_mtime = self.cfg.cfg_path.stat().st_mtime if (self.cfg.cfg_path and self.cfg.cfg_path.exists()) else 0.0
 
         def _cfg_watcher():
-            while True:
+            while getattr(self, "tray", None) and getattr(self.tray, "running", True):
                 time.sleep(2.0)
                 self.check_config_reload()
 
@@ -3491,6 +3544,9 @@ class PrecEngine:
         if self.is_scrim and "_scrim" not in result.lower():
             result = f"{result}_scrim"
 
+        # Security: Strip path traversal and illegal characters from final filename
+        result = re.sub(r'[\/\\:\*\?"<>\|]', '_', result)
+        result = re.sub(r'\.\.+', '_', result)
         result = re.sub(r'_+', '_', result).strip('_')
         return result or f"{now.strftime('%Y%m%d_%H%M')}_{clean_map}"
 
@@ -3694,10 +3750,11 @@ class PrecEngine:
         # Query tournament team names (e.g. Froyotech, Witness Gaming, red, blu)
         self.query_tournament_teams()
 
-        demo_name = self.format_demo_name()
+        demo_name = re.sub(r'["\r\n;\0]', '', self.format_demo_name())
         self.current_demo_name = demo_name
         demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
         demo_rel_path = f"{demo_dir}/{demo_name}" if demo_dir else demo_name
+        demo_rel_path = re.sub(r'["\r\n;\0]', '', demo_rel_path)
 
         action_title = "RECORDING RESUMED / CONTINUED" if (is_resume or any(w in reason.lower() for w in ("reconnect", "resume", "substitute", "continue"))) else "RECORDING STARTED"
 
@@ -3813,9 +3870,18 @@ class PrecEngine:
         if not self.sender:
             return
         try:
-            self.sender.send_command(cmd)
+            clean_cmd = cmd.strip("\r\n\0")
+            self.sender.send_command(clean_cmd)
         except Exception as e:
             print(f"[{APP_NAME} ERROR] Failed to send command '{cmd}': {e}", flush=True)
+
+    def _restart_recording_for_match(self, reason):
+        """Asynchronously stops warmup demo and begins official match demo without blocking console reader."""
+        def _worker():
+            self.stop_recording("Warmup Ended / Match Live")
+            time.sleep(0.12)
+            self.start_recording(reason)
+        threading.Thread(target=_worker, daemon=True).start()
 
     def process_console_line(self, line):
         if not line:
@@ -3921,23 +3987,25 @@ class PrecEngine:
                     break
 
         # 1. Auto-switch League Profile & Scrim / Match mode based on loaded server configs
-        for l_id, prof in self.profiles.items():
-            for pattern in prof.get("server_config_patterns", []):
-                if re.search(pattern, line, re.I):
-                    self.is_tournament = True
-                    is_scrim = bool(re.search(r"scrim", line, re.I) or re.search(r"scrim", pattern, re.I))
+        line_l = line.lower()
+        if any(marker in line_l for marker in (".cfg", "exec", "config", "loading", "scrim", "match")):
+            for l_id, prof in self.profiles.items():
+                for pattern in prof.get("server_config_patterns", []):
+                    if re.search(pattern, line, re.I):
+                        self.is_tournament = True
+                        is_scrim = bool(re.search(r"scrim", line, re.I) or re.search(r"scrim", pattern, re.I))
 
-                    # Switch profile or mode if changed
-                    if self.active_profile.get("id") != l_id or self.is_scrim != is_scrim:
-                        self.active_profile = prof
-                        self.is_scrim = is_scrim
-                        mode_label = "SCRIM MODE (Practice)" if is_scrim else "OFFICIAL MATCH"
-                        print(f"\n[{APP_NAME}] ⚡ AUTO-SWITCHED LEAGUE PROFILE: {prof.get('name')} [{mode_label}]", flush=True)
-                        print(f"[{APP_NAME}] Triggered by config execution: {line.strip()}", flush=True)
-                        self.apply_league_cvars()
-                        if hasattr(self, "tray") and self.tray:
-                            self.tray.update_status(f"{prof.get('name')} [{mode_label}]")
-                    return
+                        # Switch profile or mode if changed
+                        if self.active_profile.get("id") != l_id or self.is_scrim != is_scrim:
+                            self.active_profile = prof
+                            self.is_scrim = is_scrim
+                            mode_label = "SCRIM MODE (Practice)" if is_scrim else "OFFICIAL MATCH"
+                            print(f"\n[{APP_NAME}] ⚡ AUTO-SWITCHED LEAGUE PROFILE: {prof.get('name')} [{mode_label}]", flush=True)
+                            print(f"[{APP_NAME}] Triggered by config execution: {line.strip()}", flush=True)
+                            self.apply_league_cvars()
+                            if hasattr(self, "tray") and self.tray:
+                                self.tray.update_status(f"{prof.get('name')} [{mode_label}]")
+                        return
 
         # Generic scrim config detection (e.g. exec scrim, loading scrim)
         if re.search(r"\b(exec\s+[a-zA-Z0-9_]*scrim|loading\s+scrim|scrim_config)\b", line, re.I):
@@ -3979,9 +4047,7 @@ class PrecEngine:
             self.is_tournament = True
             if self.is_recording:
                 # If already recording during warmup, restart demo cleanly for official match
-                self.stop_recording("Warmup Ended / Match Live")
-                time.sleep(0.3)
-                self.start_recording("Soap DM Unloaded (Official Match Live)")
+                self._restart_recording_for_match("Soap DM Unloaded (Official Match Live)")
             else:
                 self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)")
             return
@@ -4000,9 +4066,7 @@ class PrecEngine:
         if "[SOAP] Match is starting" in line or "[SOAP] Match begins" in line:
             self.is_tournament = True
             if self.is_recording:
-                self.stop_recording("Warmup Ended / Match Live")
-                time.sleep(0.3)
-                self.start_recording("SOAP DM Match Live")
+                self._restart_recording_for_match("SOAP DM Match Live")
             else:
                 self.start_recording("SOAP DM Match Live")
             return
@@ -4010,9 +4074,7 @@ class PrecEngine:
         if re.search(r"(Both teams are ready|Match is LIVE|All players are ready)", line, re.I):
             self.is_tournament = True
             if self.is_recording:
-                self.stop_recording("Pregame Ended / Match Live")
-                time.sleep(0.3)
-                self.start_recording("Competitive League Match Live")
+                self._restart_recording_for_match("Competitive League Match Live")
             else:
                 self.start_recording("Competitive League Match Live")
             return
