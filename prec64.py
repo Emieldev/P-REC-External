@@ -278,7 +278,10 @@ class PrecConfig:
         # Recording & Demo Settings
         self.prec_mode = 2                # 0=off, 1=custom, 2=tournament live, 3=all
         self.prec_dir = "demos"
-        self.prec_sound = 1
+        self.prec_sound = 1               # 0=off, 1=chill classic in-game cues, 2=funny voicelines
+        self.prec_sound_start = "buttons/button9.wav"
+        self.prec_sound_stop = "buttons/button14.wav"
+        self.prec_sound_mark = "buttons/bell1.wav"
         self.prec_hide_to_tray = 1        # 1=Hide to system tray (hidden pictograms), 0=keep console open
         self.prec_desktop_shortcut = 1    # 1=Ensure desktop shortcut exists, 0=off
         self.prec_screens = 1             # Status & scoreboard screenshot on round/match end
@@ -347,6 +350,12 @@ class PrecConfig:
                     self.prec_dir = val
                 elif key in ("prec_sound", "sound", "ds_sound"):
                     self.prec_sound = int(val)
+                elif key in ("prec_sound_start", "sound_start"):
+                    self.prec_sound_start = val
+                elif key in ("prec_sound_stop", "sound_stop"):
+                    self.prec_sound_stop = val
+                elif key in ("prec_sound_mark", "sound_mark"):
+                    self.prec_sound_mark = val
                 elif key in ("prec_popup", "popup"):
                     self.prec_popup = int(val)
                 elif key in ("prec_hide_to_tray", "hide_to_tray", "prec_tray"):
@@ -450,6 +459,9 @@ alias prec_league                ""
 alias prec_mode                  ""
 alias prec_dir                   ""
 alias prec_sound                 ""
+alias prec_sound_start           ""
+alias prec_sound_stop            ""
+alias prec_sound_mark            ""
 alias prec_screens               ""
 alias prec_status                ""
 alias prec_screenshot            ""
@@ -485,10 +497,20 @@ prec_league                "etf2l"
 prec_mode                  2
 
 // --------------------------------------------------------------------
-// 3. Demo Storage & Alerts
+// 3. Demo Storage & Audio Cues
 // --------------------------------------------------------------------
 prec_dir                   "demos"
+
+// Audio Alert Mode:
+//   1 = Short, chill in-game audio cues (Classic P-REC button clicks: button9 & button14 - Default)
+//   0 = Mute audio cues
 prec_sound                 1
+
+// Custom Sound Paths (Optional Source Engine sound overrides):
+prec_sound_start           "buttons/button9.wav"
+prec_sound_stop            "buttons/button14.wav"
+prec_sound_mark            "buttons/bell1.wav"
+
 prec_screens               1
 prec_notify                1
 
@@ -1752,6 +1774,9 @@ alias prec_league                ""
 alias prec_mode                  ""
 alias prec_dir                   ""
 alias prec_sound                 ""
+alias prec_sound_start           ""
+alias prec_sound_stop            ""
+alias prec_sound_mark            ""
 alias prec_screens               ""
 alias prec_status                ""
 alias prec_screenshot            ""
@@ -1787,10 +1812,20 @@ prec_league                "{league}"
 prec_mode                  2
 
 // --------------------------------------------------------------------
-// 3. Demo Storage & Alerts
+// 3. Demo Storage & Audio Cues
 // --------------------------------------------------------------------
 prec_dir                   "demos"
+
+// Audio Alert Mode:
+//   1 = Short, chill in-game audio cues (Classic P-REC button clicks: button9 & button14 - Default)
+//   0 = Mute audio cues
 prec_sound                 1
+
+// Custom Sound Paths (Optional Source Engine sound overrides):
+prec_sound_start           "buttons/button9.wav"
+prec_sound_stop            "buttons/button14.wav"
+prec_sound_mark            "buttons/bell1.wav"
+
 prec_screens               1
 prec_notify                1
 
@@ -3050,6 +3085,60 @@ class PrecEngine:
                 print("[STATUS] Team Fortress 2 process is not currently running.", flush=True)
             print("P-REC External is probing ports on localhost...", flush=True)
 
+            # Probe Netcon
+            netcon_ok = False
+            try:
+                nc = NetconClient(port=self.cfg.prec_netcon_port)
+                nc.connect(timeout=0.8)
+                nc.close()
+                netcon_ok = True
+                print(f"  [+] Netcon (Port {self.cfg.prec_netcon_port}): PORT OPEN! TF2 is listening.", flush=True)
+            except Exception:
+                print(f"  [-] Netcon (Port {self.cfg.prec_netcon_port}): Port closed / not listening.", flush=True)
+
+            # Probe RCON
+            rcon_ok = False
+            rcon_error = None
+            try:
+                rc = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password, candidate_passwords=self.cfg.candidate_passwords)
+                rc.connect(timeout=1.2, verbose=True)
+                if rc.password != self.cfg.prec_rcon_password:
+                    self.cfg.prec_rcon_password = rc.password
+                rc.close()
+                rcon_ok = True
+                print(f"  [+] RCON (Port {self.cfg.prec_rcon_port}): PORT OPEN! Password authenticated successfully.", flush=True)
+            except Exception as e:
+                rcon_error = e
+                print(f"  [-] RCON (Port {self.cfg.prec_rcon_port}): Failed ({e}).", flush=True)
+
+            if not netcon_ok and not rcon_ok:
+                if not tf_running:
+                    print("\n[DIAGNOSIS] Team Fortress 2 is not currently running.", flush=True)
+                    print("Start TF2 from Steam with these Launch Options:\n", flush=True)
+                    print(f"  -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start\n", flush=True)
+                else:
+                    err_str = str(rcon_error)
+                    if "10054" in err_str or "Connection reset" in err_str or "10053" in err_str or "closed by remote" in err_str:
+                        print(f"\n[DIAGNOSIS] TF2 is running on PID {tf_pid}, but reset the connection on port {self.cfg.prec_rcon_port}.", flush=True)
+                        print("  Cause: TF2's internal flood protection temporarily banned 127.0.0.1 due to earlier connection attempts,", flush=True)
+                        print("         or the game needs the whitelist address cvar active.", flush=True)
+                        print("  FIX: Open TF2 in-game console (~) and enter:", flush=True)
+                        print("       removeip 127.0.0.1; sv_rcon_whitelist_address 127.0.0.1", flush=True)
+                        print("       Or simply restart Team Fortress 2.\n", flush=True)
+                    elif "PermissionError" in str(type(rcon_error)) or "rejected" in err_str:
+                        print(f"\n[DIAGNOSIS] TF2 is listening on port {self.cfg.prec_rcon_port}, but the password was rejected.", flush=True)
+                        print(f"  Check that 'rcon_password' in TF2 matches your settings password ({self.cfg.prec_rcon_password}).\n", flush=True)
+                    else:
+                        print(f"\n[DIAGNOSIS] TF2 is running on PID {tf_pid}, but port {self.cfg.prec_rcon_port} is not listening.", flush=True)
+                        print("  Make sure TF2 was launched with:", flush=True)
+                        print(f"  -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start\n", flush=True)
+                if hasattr(self, "tray") and self.tray:
+                    self.tray.update_status("Waiting for TF2...")
+            else:
+                print("\n[DIAGNOSIS] Port is open! The main listener loop will hook in within 2 seconds.", flush=True)
+
+        print("=" * 60 + "\n", flush=True)
+
     def check_config_reload(self):
         """
         Monitors PREC_Settings.cfg for changes on disk and dynamically reloads them.
@@ -3072,6 +3161,9 @@ class PrecEngine:
                 old_name = self.cfg.prec_demo_name
                 old_screens = self.cfg.prec_screens
                 old_sound = self.cfg.prec_sound
+                old_sound_start = getattr(self.cfg, "prec_sound_start", "buttons/button9.wav")
+                old_sound_stop = getattr(self.cfg, "prec_sound_stop", "buttons/button14.wav")
+                old_sound_mark = getattr(self.cfg, "prec_sound_mark", "buttons/bell1.wav")
                 old_notify = self.cfg.prec_notify
 
                 self.cfg.load()
@@ -3093,6 +3185,12 @@ class PrecEngine:
                     changes.append(f"prec_screens: {old_screens} -> {self.cfg.prec_screens}")
                 if self.cfg.prec_sound != old_sound:
                     changes.append(f"prec_sound: {old_sound} -> {self.cfg.prec_sound}")
+                if self.cfg.prec_sound_start != old_sound_start:
+                    changes.append(f"prec_sound_start: '{old_sound_start}' -> '{self.cfg.prec_sound_start}'")
+                if self.cfg.prec_sound_stop != old_sound_stop:
+                    changes.append(f"prec_sound_stop: '{old_sound_stop}' -> '{self.cfg.prec_sound_stop}'")
+                if self.cfg.prec_sound_mark != old_sound_mark:
+                    changes.append(f"prec_sound_mark: '{old_sound_mark}' -> '{self.cfg.prec_sound_mark}'")
                 if self.cfg.prec_notify != old_notify:
                     changes.append(f"prec_notify: {old_notify} -> {self.cfg.prec_notify}")
 
@@ -3166,6 +3264,21 @@ class PrecEngine:
                     changed = True
             except ValueError:
                 pass
+        elif clean_name in ("prec_sound_start", "sound_start"):
+            if self.cfg.prec_sound_start != val:
+                old_val = self.cfg.prec_sound_start
+                self.cfg.prec_sound_start = val
+                changed = True
+        elif clean_name in ("prec_sound_stop", "sound_stop"):
+            if self.cfg.prec_sound_stop != val:
+                old_val = self.cfg.prec_sound_stop
+                self.cfg.prec_sound_stop = val
+                changed = True
+        elif clean_name in ("prec_sound_mark", "sound_mark"):
+            if self.cfg.prec_sound_mark != val:
+                old_val = self.cfg.prec_sound_mark
+                self.cfg.prec_sound_mark = val
+                changed = True
         elif clean_name in ("prec_notify", "notify", "ds_notify"):
             try:
                 iv = int(val)
@@ -3181,61 +3294,6 @@ class PrecEngine:
             self.send_cmd(f'echo "[P-REC External] Setting updated: {clean_name} = {val}"')
             if hasattr(self, "tray") and self.tray:
                 self.tray.update_status(f"{self.active_profile.get('name', 'P-REC')} (Mode {self.cfg.prec_mode})")
-
-            # Probe Netcon
-            netcon_ok = False
-            try:
-                nc = NetconClient(port=self.cfg.prec_netcon_port)
-                nc.connect(timeout=0.8)
-                nc.close()
-                netcon_ok = True
-                print(f"  [+] Netcon (Port {self.cfg.prec_netcon_port}): PORT OPEN! TF2 is listening.", flush=True)
-            except Exception:
-                print(f"  [-] Netcon (Port {self.cfg.prec_netcon_port}): Port closed / not listening.", flush=True)
-
-            # Probe RCON
-            rcon_ok = False
-            rcon_error = None
-            try:
-                rc = SourceRcon(port=self.cfg.prec_rcon_port, password=self.cfg.prec_rcon_password, candidate_passwords=self.cfg.candidate_passwords)
-                rc.connect(timeout=1.2, verbose=True)
-                if rc.password != self.cfg.prec_rcon_password:
-                    self.cfg.prec_rcon_password = rc.password
-                rc.close()
-                rcon_ok = True
-                print(f"  [+] RCON (Port {self.cfg.prec_rcon_port}): PORT OPEN! Password authenticated successfully.", flush=True)
-            except Exception as e:
-                rcon_error = e
-                print(f"  [-] RCON (Port {self.cfg.prec_rcon_port}): Failed ({e}).", flush=True)
-
-            if not netcon_ok and not rcon_ok:
-                if not tf_running:
-                    print("\n[DIAGNOSIS] Team Fortress 2 is not currently running.", flush=True)
-                    print("Start TF2 from Steam with these Launch Options:\n", flush=True)
-                    print(f"  -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start\n", flush=True)
-                else:
-                    err_str = str(rcon_error)
-                    if "10054" in err_str or "Connection reset" in err_str or "10053" in err_str or "closed by remote" in err_str:
-                        print(f"\n[DIAGNOSIS] TF2 is running on PID {tf_pid}, but reset the connection on port {self.cfg.prec_rcon_port}.", flush=True)
-                        print("  Cause: TF2's internal flood protection temporarily banned 127.0.0.1 due to earlier connection attempts,", flush=True)
-                        print("         or the game needs the whitelist address cvar active.", flush=True)
-                        print("  FIX: Open TF2 in-game console (~) and enter:", flush=True)
-                        print("       removeip 127.0.0.1; sv_rcon_whitelist_address 127.0.0.1", flush=True)
-                        print("       Or simply restart Team Fortress 2.\n", flush=True)
-                    elif "PermissionError" in str(type(rcon_error)) or "rejected" in err_str:
-                        print(f"\n[DIAGNOSIS] TF2 is listening on port {self.cfg.prec_rcon_port}, but the password was rejected.", flush=True)
-                        print(f"  Check that 'rcon_password' in TF2 matches your settings password ({self.cfg.prec_rcon_password}).\n", flush=True)
-                    else:
-                        print(f"\n[DIAGNOSIS] TF2 is running on PID {tf_pid}, but port {self.cfg.prec_rcon_port} is not listening.", flush=True)
-                        print("  Make sure TF2 was launched with:", flush=True)
-                        print(f"  -usercon +rcon_password {self.cfg.prec_rcon_password} +ip 0.0.0.0 +hostport {self.cfg.prec_rcon_port} +net_start\n", flush=True)
-                if hasattr(self, "tray") and self.tray:
-                    self.tray.update_status("Waiting for TF2...")
-                self.play_sound(is_start=False)
-            else:
-                print("\n[DIAGNOSIS] Port is open! The main listener loop will hook in within 2 seconds.", flush=True)
-
-        print("=" * 60 + "\n", flush=True)
 
     def stop_all(self):
         print(f"\n[{APP_NAME}] Exit requested from System Tray. Shutting down...", flush=True)
@@ -3420,30 +3478,64 @@ class PrecEngine:
         self.send_cmd(f'echo "[P-REC External] League profile active: {prof_name} [{mode_label}]"')
         self.send_cmd(f'echo "[P-REC External] Target demo directory: tf/{self.cfg.prec_dir}/ | Prefix: {prefix}"')
 
-    def play_sound(self, is_start=True):
+    def play_sound(self, event="start"):
+        """
+        Plays short, chill notification audio cues directly into TF2's game audio mixer via Source engine `play`.
+        Uses crisp, dedicated tactile UI sounds (classic P-REC button9 / button14) that cannot be mistaken for
+        player voice lines, and completely eliminates annoying motherboard/piezo beeps.
+
+        event: "start", "stop", or "mark" (also accepts boolean True/False: True=start, False=stop)
+
+        Modes (self.cfg.prec_sound):
+          1 = Short, chill in-game tactile UI cues (Default: classic P-REC buttons/button9.wav on start, buttons/button14.wav on stop)
+          0 = Mute audio cues
+
+        Custom overrides in PREC_Settings.cfg:
+          prec_sound_start "buttons/button9.wav"
+          prec_sound_stop "buttons/button14.wav"
+          prec_sound_mark "buttons/bell1.wav"
+        """
+        if isinstance(event, bool):
+            event = "start" if event else "stop"
+        event = str(event).lower()
+
         if not self.cfg.prec_sound:
             return
-        try:
-            if sys.platform == "win32":
-                import winsound
-                if is_start:
-                    winsound.Beep(900, 120)
-                    time.sleep(0.04)
-                    winsound.Beep(1200, 180)
+
+        # Short, crisp tactile UI sound cues (never mercenary voice lines)
+        if event == "start":
+            sound_to_play = getattr(self.cfg, "prec_sound_start", "buttons/button9.wav") or "buttons/button9.wav"
+        elif event == "stop":
+            sound_to_play = getattr(self.cfg, "prec_sound_stop", "buttons/button14.wav") or "buttons/button14.wav"
+        elif event == "mark":
+            sound_to_play = getattr(self.cfg, "prec_sound_mark", "buttons/bell1.wav") or "buttons/bell1.wav"
+        else:
+            sound_to_play = "buttons/button9.wav"
+
+        # 1. Primary delivery: Route through TF2's Source audio mixer via console command
+        played_in_game = False
+        if sound_to_play and self.sender:
+            try:
+                self.send_cmd(f'play "{sound_to_play}"')
+                played_in_game = True
+            except Exception:
+                played_in_game = False
+
+        # 2. Gentle Windows system chime fallback (ONLY if TF2 is not connected / off)
+        if not played_in_game:
+            try:
+                if sys.platform == "win32":
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_ICONASTERISK)
                 else:
-                    winsound.Beep(1200, 120)
-                    time.sleep(0.04)
-                    winsound.Beep(800, 180)
-            else:
-                try:
-                    sound_name = "bell" if is_start else "dialog-warning"
-                    subprocess.run(["paplay", f"/usr/share/sounds/freedesktop/stereo/{sound_name}.oga"],
-                                   check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception:
-                    sys.stdout.write("\a")
-                    sys.stdout.flush()
-        except Exception:
-            pass
+                    try:
+                        sound_name = "bell" if event == "start" else "dialog-warning"
+                        subprocess.run(["paplay", f"/usr/share/sounds/freedesktop/stereo/{sound_name}.oga"],
+                                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     def capture_status_screenshot(self, trigger_type="Mid-Game (3+ mins)"):
         """
@@ -3691,6 +3783,7 @@ class PrecEngine:
             self.send_cmd(f'echo "[P-REC External] Bookmark placed in {self.current_demo_name}.dem"')
             if self.cfg.prec_notify >= 1 and self.cfg.pr_message_mark:
                 self.send_cmd(self.cfg.pr_message_mark)
+            self.play_sound("mark")
 
         map_match = re.search(r"(?:Map:\s+|map\s*:\s+)([a-zA-Z0-9_]+)", line, re.I)
         if map_match:

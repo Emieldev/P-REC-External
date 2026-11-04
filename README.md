@@ -288,7 +288,10 @@ All league rules are stored as independent JSON files in the [`leagues/`](league
 | `prec_league` | `"etf2l"` | Default league profile (`etf2l`, `asiafortress`, `rgl`, `ozfortress`, `matcha`, `cltf2`, `custom`). Automatically switches when match configs execute. |
 | `prec_mode` | `2` | `3` = Record ALL matches (every map/round), `2` = Record tournament matches only (Default), `1` = Manual recording, `0` = Disabled. |
 | `prec_dir` | `"demos"` | Folder inside `/tf/` where demo files are saved. |
-| `prec_sound` | `1` | `1` = Play audio cue on start/stop, `0` = Mute. |
+| `prec_sound` | `1` | `1` = Short, chill in-game tactile UI cues (Classic P-REC button clicks: `buttons/button9.wav` & `buttons/button14.wav`), `0` = Mute. |
+| `prec_sound_start` | `"buttons/button9.wav"` | Source Engine sound path played on record start. |
+| `prec_sound_stop` | `"buttons/button14.wav"` | Source Engine sound path played on record stop. |
+| `prec_sound_mark` | `"buttons/bell1.wav"` | Source Engine sound path played on bookmark (`ds_mark`). |
 | `prec_hide_to_tray` | `1` | `1` = Hide console window into Windows System Tray (Hidden Pictograms), `0` = Keep console window open. |
 | `prec_screens` | `1` | `1` = Capture in-game status screenshot (randomly after 3 mins of play) & match-end scoreboard. Automatically suppressed during scrims. |
 | `prec_notify` | `1` | `0` = Console only, `1` = Team chat announcements, `2` = HUD notification. |
