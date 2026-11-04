@@ -37,6 +37,7 @@ import shutil
 import threading
 import secrets
 import subprocess
+import random
 import urllib.request
 from pathlib import Path
 
@@ -2602,6 +2603,9 @@ class PrecEngine:
         self.current_red_team = "red"
         self.current_blu_team = "blu"
         self.current_demo_name = ""
+        self.match_start_time = 0.0
+        self.status_screenshot_taken = False
+        self.status_screenshot_timer = None
         self.profiles = load_league_profiles(self.cfg.prec_tf_path)
         league_id = self.cfg.prec_league.lower()
         self.active_profile = self.profiles.get(league_id, self.profiles.get("custom", {}))
@@ -2740,6 +2744,12 @@ class PrecEngine:
 
     def stop_all(self):
         print(f"\n[{APP_NAME}] Exit requested from System Tray. Shutting down...", flush=True)
+        if getattr(self, "status_screenshot_timer", None):
+            try:
+                self.status_screenshot_timer.cancel()
+            except Exception:
+                pass
+            self.status_screenshot_timer = None
         if self.is_recording:
             try:
                 self.stop_recording("User Exit")
@@ -2900,6 +2910,59 @@ class PrecEngine:
         except Exception:
             pass
 
+    def capture_status_screenshot(self, trigger_type="Mid-Game (3+ mins)"):
+        """Captures in-game status & screenshot via Source engine RCON (status; jpeg)."""
+        if not self.is_recording:
+            return
+
+        should_screen = (self.cfg.prec_screens and not self.is_scrim) or (
+            self.active_profile.get("mandatory_status_screenshot") and not self.is_scrim
+        )
+        if not should_screen:
+            return
+
+        print(f"\n[{APP_NAME}] Capturing mandatory status screenshot ({trigger_type})...", flush=True)
+        self.send_cmd("status; jpeg")
+        self.send_cmd(f'echo "[P-REC External] Status screenshot captured ({trigger_type})"')
+        self.status_screenshot_taken = True
+
+    def schedule_status_screenshot(self):
+        """Schedules random in-game status screenshot after 3 minutes of play (ETF2L Rule 2.1 compliance)."""
+        if self.status_screenshot_timer:
+            try:
+                self.status_screenshot_timer.cancel()
+            except Exception:
+                pass
+            self.status_screenshot_timer = None
+
+        should_screen = (self.cfg.prec_screens and not self.is_scrim) or (
+            self.active_profile.get("mandatory_status_screenshot") and not self.is_scrim
+        )
+        if not should_screen:
+            return
+
+        now = time.time()
+        elapsed = (now - self.match_start_time) if self.match_start_time else 0.0
+        if elapsed >= 180.0:
+            # Match is already 3+ minutes in (substitute or mid-game reconnect)
+            delay = random.uniform(10.0, 45.0)
+        else:
+            # Fresh match: wait until 3 minutes (180s) have passed, plus a random offset (15-75s)
+            delay = (180.0 - elapsed) + random.uniform(15.0, 75.0)
+
+        total_play_time = elapsed + delay
+        mins = int(total_play_time // 60)
+        secs = int(total_play_time % 60)
+        print(f"[{APP_NAME}] In-game status screenshot scheduled in {int(delay)}s (after ~{mins}m {secs:02d}s of play)", flush=True)
+
+        def _worker():
+            if self.is_recording and not self.status_screenshot_taken:
+                self.capture_status_screenshot(f"Mid-Game: ~{mins}m {secs:02d}s")
+
+        self.status_screenshot_timer = threading.Timer(delay, _worker)
+        self.status_screenshot_timer.daemon = True
+        self.status_screenshot_timer.start()
+
     def start_recording(self, reason="Match Live"):
         now = time.time()
         if self.is_recording or (now - self.last_record_start < 1.5):
@@ -2908,6 +2971,11 @@ class PrecEngine:
         self.last_record_start = now
         self.is_recording = True
         self.was_in_match = True
+        if not self.match_start_time:
+            self.match_start_time = now
+        self.status_screenshot_taken = False
+        self.schedule_status_screenshot()
+
         if self.current_server_ip:
             self.last_connected_server = self.current_server_ip
         if self.current_map:
@@ -2957,12 +3025,25 @@ class PrecEngine:
         self.is_recording = False
         print(f"\n[{APP_NAME}] >>> STOP RECORDING <<< ({reason})", flush=True)
 
+        if self.status_screenshot_timer:
+            try:
+                self.status_screenshot_timer.cancel()
+            except Exception:
+                pass
+            self.status_screenshot_timer = None
+
         # In scrim mode, skip mandatory status screenshots unless explicitly configured
         should_screen = (self.cfg.prec_screens and not self.is_scrim) or (self.active_profile.get("mandatory_status_screenshot") and not self.is_scrim)
         if should_screen:
-            print(f"[{APP_NAME}] Capturing mandatory status & scoreboard screenshot...", flush=True)
-            self.send_cmd("status; jpeg")
-            time.sleep(0.4)
+            if not self.status_screenshot_taken:
+                self.capture_status_screenshot("Match End Fallback")
+                time.sleep(0.4)
+            elif self.cfg.prec_screens >= 1:
+                print(f"[{APP_NAME}] Capturing match end scoreboard screenshot...", flush=True)
+                self.send_cmd("status; jpeg")
+                time.sleep(0.4)
+
+        self.match_start_time = 0.0
 
         self.send_cmd("stop; ds_stop")
         demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
