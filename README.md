@@ -15,11 +15,12 @@
 > [!WARNING]
 > ### ⚠️ 100% Completely Vibecoded Application — Use at Your Own Risk
 > **Why does this project exist?**
-> Honestly, I got completely fed up with **PeachREC being shit** (causing microstutters and frame drops with synchronous HUD animation loops) and the original **P-REC not working** on modern 64-bit TF2 without `-insecure` (which Valve requires for unsigned plugins, blocking connection to VAC match servers).
+> Honestly, I got fed up with PeachREC microstutters making it unusable and causing start of round lag with many HUDs, and the original **P-REC not working** on modern 64-bit TF2 without `-insecure` (which Valve requires for unsigned plugins, blocking connection to VAC match servers).
 >
 > So I **vibecoded this companion for myself** using AI to achieve zero game lag, zero warmup bloat, and flawless competitive league compliance.
 >
-> While this software is architecturally **100% VAC-safe** (it uses official Source Engine RCON and Netcon loopback protocols with zero memory injection, zero DLL hooking, and zero modified game binaries), it is community vibecoded software. **Always test and verify your demo recordings during scrims and practice before relying on it for high-stakes league championship matches!**
+> ⚠️ **Player Responsibility Disclaimer:**
+> In all competitive leagues (ETF2L, RGL, ozfortress, AsiaFortress, etc.), **it remains the player's personal responsibility to ensure your POV demos are actively recording and saved**. While this software is architecturally **100% VAC-safe** (using official Source Engine RCON and Netcon loopback protocols with zero memory injection, zero DLL hooking, and zero modified game binaries), always verify your in-game developer console (`~`) notifications, check your demo folder after games, and test recording during scrims before relying on it for high-stakes league matches!
 
 ---
 
@@ -27,7 +28,7 @@
 
 | Feature | How P-REC External Solves It | Predecessors / Alternatives |
 | :--- | :--- | :--- |
-| **0 FPS Impact / Zero Lag** | Runs completely out-of-process via engine network sockets. Touches **0 HUD animation manifests** and draws **0 VGUI panels**. | **PeachREC** runs synchronous animation loops on the main render thread, causing frame pacing jitter and microstutters. |
+| **0 FPS Impact / Zero Lag** | Runs completely out-of-process via engine network sockets. Touches **0 HUD animation manifests** and draws **0 VGUI panels**. | **PeachREC** runs synchronous animation loops on the main render thread, causing frame pacing jitter and start-of-round microstutters with many HUDs. |
 | **100% VAC-Safe** | Uses official Source Engine RCON and Netcon protocols. Zero DLL injection, zero memory tampering. | **Original P-REC** cannot run on 64-bit TF2 without `-insecure` (which triggers VAC server bans and league disqualification). |
 | **Zero Warmup Bloat** | Listens to tournament countdown pulses and triggers recording **strictly when the match goes live**. | Valve's **`ds_enable 3`** starts recording the instant you join a server with `mp_tournament 1`, recording 30+ minutes of warmups and roll-calls. |
 | **🛡️ System Tray (Hidden Pictograms)** | Runs quietly in the Windows Notification Area under **Hidden Pictograms** with the crisp TF2 **Supreme Soviet** icon. Right-click for Settings, Custom Folder, or clean Exit! | Clutters your taskbar with open cmd windows. |
@@ -65,7 +66,7 @@ Keeping faith with the classic **P-REC** heritage:
 
 1. **P-REC External: Precision Recording Engine for Competition** *(Accurate, professional, focuses on sub-tick live countdown timing)*
 2. **P-REC External: Point-of-view Recording External Companion** *(Descriptive of its non-intrusive, zero-injection architecture)*
-3. **P-REC External: Peach-Replacement External Companion** *(Community tongue-in-cheek nod to replacing PeachREC's stuttery HUD loops)*
+3. **P-REC External: Peach-Replacement External Companion** *(Community tongue-in-cheek nod to replacing PeachREC's HUD animation microstutters)*
 4. **P-REC External: Perfect Recording for Esports & Competition** *(Focuses on tournament compliance and ruleset integrity)*
 5. **P-REC External: Pure Recording External Client** *(Nods to running on pure VAC-secured TF2 without `-insecure`)*
 6. **P-REC External: Painless Recording for Every Competition** *(Emphasizes automatic league switching, auto-RCON, and zero setup pain)*

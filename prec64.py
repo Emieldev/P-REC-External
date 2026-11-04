@@ -42,18 +42,26 @@ import urllib.request
 from pathlib import Path
 
 # In PyInstaller windowed / GUI mode on Windows, standard streams are None
+class NullStream(io.StringIO):
+    def isatty(self):
+        return False
+    def fileno(self):
+        raise io.UnsupportedOperation("fileno not available on NullStream")
+
 if sys.stdin is None:
-    sys.stdin = io.StringIO()
+    sys.stdin = NullStream()
 if sys.stdout is None:
-    sys.stdout = io.StringIO()
+    sys.stdout = NullStream()
 if sys.stderr is None:
-    sys.stderr = io.StringIO()
+    sys.stderr = NullStream()
 
 
 def is_interactive() -> bool:
     """Safely checks if running in an interactive terminal with a valid stdin."""
     try:
-        return bool(sys.stdin and hasattr(sys.stdin, "isatty") and sys.stdin.isatty())
+        if sys.stdin is None:
+            return False
+        return bool(hasattr(sys.stdin, "isatty") and sys.stdin.isatty())
     except Exception:
         return False
 
@@ -2981,10 +2989,21 @@ class PrecEngine:
                 pass
         threading.Thread(target=_bg_update_check, daemon=True).start()
 
+        # Background live config file watcher (detects disk edits to PREC_Settings.cfg)
+        self.last_cfg_mtime = self.cfg.cfg_path.stat().st_mtime if (self.cfg.cfg_path and self.cfg.cfg_path.exists()) else 0.0
+
+        def _cfg_watcher():
+            while True:
+                time.sleep(2.0)
+                self.check_config_reload()
+
+        threading.Thread(target=_cfg_watcher, daemon=True).start()
+
     def check_connection(self):
         """
         Manually tests connection to TF2, prints diagnostics,
         sends confirmation to TF2 in-game console, and updates tray status.
+        Does NOT broadcast to teamchat.
         """
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
         print("\n" + "=" * 60, flush=True)
@@ -3000,18 +3019,18 @@ class PrecEngine:
             print(f"         Tournament Live: {'YES' if self.is_tournament else 'NO (Waiting for match countdown)'}", flush=True)
             print(f"         Currently Recording: {'YES' if self.is_recording else 'NO'}", flush=True)
 
-            # In-game console feedback
+            # In-game console feedback (strictly to developer console ~, NEVER teamchat)
             self.send_cmd('echo ""')
             self.send_cmd('echo "[P-REC External] ================================================"')
             self.send_cmd('echo "[P-REC External] CONNECTION CHECK: SUCCESS!"')
             self.send_cmd(f'echo "[P-REC External] Communication active via {mode_upper} (Port {port})"')
             self.send_cmd(f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"')
             self.send_cmd('echo "[P-REC External] All systems operational. Match monitoring engaged."')
-            self.send_cmd('echo "[P-REC External] ================================================"')
-            self.send_cmd('echo ""')
             self.query_tournament_teams()
             sample_name = self.format_demo_name()
-            self.send_cmd(f'say_team [P-REC] Connection check: SUCCESS! Active League: {prof_name} | Demo Template: {sample_name}.dem')
+            self.send_cmd(f'echo "[P-REC External] Demo Template: tf/demos/{sample_name}.dem"')
+            self.send_cmd('echo "[P-REC External] ================================================"')
+            self.send_cmd('echo ""')
 
             if hasattr(self, "tray") and self.tray:
                 self.tray.update_status(f"Connected ({mode_upper} • {prof_name}) - OK")
@@ -3026,6 +3045,138 @@ class PrecEngine:
             else:
                 print("[STATUS] Team Fortress 2 process is not currently running.", flush=True)
             print("P-REC External is probing ports on localhost...", flush=True)
+
+    def check_config_reload(self):
+        """
+        Monitors PREC_Settings.cfg for changes on disk and dynamically reloads them.
+        Notifies both the P-REC console and in-game developer console (~) of updated values.
+        """
+        try:
+            if not self.cfg.cfg_path or not self.cfg.cfg_path.exists():
+                return
+            mtime = self.cfg.cfg_path.stat().st_mtime
+            if self.last_cfg_mtime == 0.0:
+                self.last_cfg_mtime = mtime
+                return
+            if mtime > self.last_cfg_mtime:
+                self.last_cfg_mtime = mtime
+                # Compare old values
+                old_mode = self.cfg.prec_mode
+                old_league = self.cfg.prec_league
+                old_dir = self.cfg.prec_dir
+                old_tag = self.cfg.prec_tag
+                old_name = self.cfg.prec_demo_name
+                old_screens = self.cfg.prec_screens
+                old_sound = self.cfg.prec_sound
+                old_notify = self.cfg.prec_notify
+
+                self.cfg.load()
+
+                changes = []
+                if self.cfg.prec_mode != old_mode:
+                    changes.append(f"prec_mode: {old_mode} -> {self.cfg.prec_mode}")
+                if self.cfg.prec_league != old_league:
+                    changes.append(f"prec_league: {old_league} -> {self.cfg.prec_league}")
+                    if self.cfg.prec_league in self.profiles:
+                        self.active_profile = self.profiles[self.cfg.prec_league]
+                if self.cfg.prec_dir != old_dir:
+                    changes.append(f"prec_dir: '{old_dir}' -> '{self.cfg.prec_dir}'")
+                if self.cfg.prec_tag != old_tag:
+                    changes.append(f"prec_tag: '{old_tag}' -> '{self.cfg.prec_tag}'")
+                if self.cfg.prec_demo_name != old_name:
+                    changes.append(f"prec_demo_name: '{old_name}' -> '{self.cfg.prec_demo_name}'")
+                if self.cfg.prec_screens != old_screens:
+                    changes.append(f"prec_screens: {old_screens} -> {self.cfg.prec_screens}")
+                if self.cfg.prec_sound != old_sound:
+                    changes.append(f"prec_sound: {old_sound} -> {self.cfg.prec_sound}")
+                if self.cfg.prec_notify != old_notify:
+                    changes.append(f"prec_notify: {old_notify} -> {self.cfg.prec_notify}")
+
+                if changes:
+                    print(f"\n[{APP_NAME}] ⚙️ Detected modifications in {self.cfg.cfg_path.name} — Settings reloaded:", flush=True)
+                    for ch in changes:
+                        print(f"   • {ch}", flush=True)
+                        self.send_cmd(f'echo "[P-REC External] Config updated: {ch}"')
+                    print("-" * 65, flush=True)
+                    if hasattr(self, "tray") and self.tray:
+                        self.tray.update_status(f"{self.active_profile.get('name', 'P-REC')} (Mode {self.cfg.prec_mode})")
+        except Exception:
+            pass
+
+    def _handle_dynamic_setting_change(self, name: str, val: str, source: str = "in-game"):
+        """
+        Dynamically applies settings passed via in-game console commands or aliases.
+        Notifies both the P-REC console and in-game developer console (~).
+        """
+        changed = False
+        old_val = None
+        clean_name = name.lower()
+
+        if clean_name in ("prec_mode", "mode"):
+            try:
+                iv = int(val)
+                if self.cfg.prec_mode != iv:
+                    old_val = self.cfg.prec_mode
+                    self.cfg.prec_mode = iv
+                    changed = True
+            except ValueError:
+                pass
+        elif clean_name in ("prec_league", "league"):
+            val_l = val.lower()
+            if self.cfg.prec_league != val_l:
+                old_val = self.cfg.prec_league
+                self.cfg.prec_league = val_l
+                if val_l in self.profiles:
+                    self.active_profile = self.profiles[val_l]
+                changed = True
+        elif clean_name in ("prec_dir", "dir", "ds_dir"):
+            if self.cfg.prec_dir != val:
+                old_val = self.cfg.prec_dir
+                self.cfg.prec_dir = val
+                changed = True
+        elif clean_name in ("prec_tag", "tag"):
+            if self.cfg.prec_tag != val:
+                old_val = self.cfg.prec_tag
+                self.cfg.prec_tag = val
+                changed = True
+        elif clean_name in ("prec_demo_name", "demo_name", "prec_naming_scheme"):
+            if self.cfg.prec_demo_name != val:
+                old_val = self.cfg.prec_demo_name
+                self.cfg.prec_demo_name = val
+                changed = True
+        elif clean_name in ("prec_screens", "screens", "ds_screens"):
+            try:
+                iv = int(val)
+                if self.cfg.prec_screens != iv:
+                    old_val = self.cfg.prec_screens
+                    self.cfg.prec_screens = iv
+                    changed = True
+            except ValueError:
+                pass
+        elif clean_name in ("prec_sound", "sound", "ds_sound"):
+            try:
+                iv = int(val)
+                if self.cfg.prec_sound != iv:
+                    old_val = self.cfg.prec_sound
+                    self.cfg.prec_sound = iv
+                    changed = True
+            except ValueError:
+                pass
+        elif clean_name in ("prec_notify", "notify", "ds_notify"):
+            try:
+                iv = int(val)
+                if self.cfg.prec_notify != iv:
+                    old_val = self.cfg.prec_notify
+                    self.cfg.prec_notify = iv
+                    changed = True
+            except ValueError:
+                pass
+
+        if changed:
+            print(f"[{APP_NAME}] ⚙️ Setting changed ({source}): {clean_name} = '{val}' (was: '{old_val}')", flush=True)
+            self.send_cmd(f'echo "[P-REC External] Setting updated: {clean_name} = {val}"')
+            if hasattr(self, "tray") and self.tray:
+                self.tray.update_status(f"{self.active_profile.get('name', 'P-REC')} (Mode {self.cfg.prec_mode})")
 
             # Probe Netcon
             netcon_ok = False
@@ -3343,7 +3494,7 @@ class PrecEngine:
         self.status_screenshot_timer.daemon = True
         self.status_screenshot_timer.start()
 
-    def start_recording(self, reason="Match Live"):
+    def start_recording(self, reason="Match Live", is_resume=False):
         now = time.time()
         if self.is_recording or (now - self.last_record_start < 1.5):
             return
@@ -3371,8 +3522,14 @@ class PrecEngine:
         demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
         demo_rel_path = f"{demo_dir}/{demo_name}" if demo_dir else demo_name
 
-        print(f"\n[{APP_NAME}] >>> START RECORDING <<< ({sub_type}: {reason})", flush=True)
-        print(f"[{APP_NAME}] Demo filename: {demo_name}.dem (Target: tf/{demo_rel_path}.dem)", flush=True)
+        action_title = "RECORDING RESUMED / CONTINUED" if (is_resume or any(w in reason.lower() for w in ("reconnect", "resume", "substitute", "continue"))) else "RECORDING STARTED"
+
+        # 1. P-REC Console Notification
+        print("\n" + "=" * 65, flush=True)
+        print(f"[{APP_NAME}] >>> {action_title} <<<", flush=True)
+        print(f"[{APP_NAME}] Type:   {sub_type} ({reason})", flush=True)
+        print(f"[{APP_NAME}] Target: tf/{demo_rel_path}.dem", flush=True)
+        print("=" * 65 + "\n", flush=True)
 
         # Set ds_prefix for demo support compliance
         self.send_cmd(f'ds_prefix "{demo_name}_"')
@@ -3383,12 +3540,21 @@ class PrecEngine:
         else:
             self.send_cmd(f'record "{demo_rel_path}"')
 
-        self.send_cmd(f'echo "[P-REC External] >>> RECORDING STARTED ({sub_type}: {reason}) <<<"')
-        self.send_cmd(f'echo "[P-REC External] Target demo: tf/{demo_rel_path}.dem"')
+        # 2. In-Game Developer Console (~) Prominent Notification Banner
+        self.send_cmd('echo ""')
+        self.send_cmd('echo "[P-REC External] ================================================"')
+        self.send_cmd(f'echo "[P-REC External] >>> {action_title} <<<"')
+        self.send_cmd(f'echo "[P-REC External] Mode:   {sub_type} ({reason})"')
+        self.send_cmd(f'echo "[P-REC External] Target: tf/{demo_rel_path}.dem"')
+        self.send_cmd('echo "[P-REC External] ================================================"')
+        self.send_cmd('echo ""')
 
+        # 3. In-Game Team Chat (Only if prec_notify >= 1)
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_start:
             msg = self.cfg.pr_message_start
-            if self.is_scrim and "[P-REC]" in msg:
+            if "RESUMED" in action_title and "[P-REC]" in msg:
+                msg = msg.replace("Recording started.", "Recording resumed / continued.")
+            elif self.is_scrim and "[P-REC]" in msg:
                 msg = msg.replace("[P-REC]", "[P-REC Scrim]")
             self.send_cmd(msg)
 
@@ -3403,7 +3569,14 @@ class PrecEngine:
 
         self.last_record_stop = now
         self.is_recording = False
-        print(f"\n[{APP_NAME}] >>> STOP RECORDING <<< ({reason})", flush=True)
+        demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
+
+        # 1. P-REC Console Notification
+        print("\n" + "=" * 65, flush=True)
+        print(f"[{APP_NAME}] >>> RECORDING STOPPED <<<", flush=True)
+        print(f"[{APP_NAME}] Reason: {reason}", flush=True)
+        print(f"[{APP_NAME}] Saved:  tf/{demo_dir}/{self.current_demo_name}.dem", flush=True)
+        print("=" * 65 + "\n", flush=True)
 
         if self.status_screenshot_timer:
             try:
@@ -3426,11 +3599,17 @@ class PrecEngine:
         self.match_start_time = 0.0
 
         self.send_cmd("stop; ds_stop")
-        demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
-        print(f"[{APP_NAME}] Demo finalized and saved: tf/{demo_dir}/{self.current_demo_name}.dem", flush=True)
-        self.send_cmd(f'echo "[P-REC External] >>> RECORDING STOPPED ({reason}) <<<"')
-        self.send_cmd(f'echo "[P-REC External] Demo finalized: tf/{demo_dir}/{self.current_demo_name}.dem"')
 
+        # 2. In-Game Developer Console (~) Prominent Notification Banner
+        self.send_cmd('echo ""')
+        self.send_cmd('echo "[P-REC External] ================================================"')
+        self.send_cmd(f'echo "[P-REC External] >>> RECORDING STOPPED <<<"')
+        self.send_cmd(f'echo "[P-REC External] Reason: {reason}"')
+        self.send_cmd(f'echo "[P-REC External] Saved:  tf/{demo_dir}/{self.current_demo_name}.dem"')
+        self.send_cmd('echo "[P-REC External] ================================================"')
+        self.send_cmd('echo ""')
+
+        # 3. In-Game Team Chat (Only if prec_notify >= 1)
         if self.cfg.prec_notify >= 1 and self.cfg.pr_message_stop:
             msg = self.cfg.pr_message_stop
             if self.is_scrim and "[P-REC]" in msg:
@@ -3465,30 +3644,60 @@ class PrecEngine:
         if not line:
             return
 
+        # Dynamic In-Game Cvar / Setting Execution (e.g. prec_mode 3, prec_dir matches, ds_dir ...)
+        cvar_match = re.search(r'^\s*(prec_[a-zA-Z0-9_]+|ds_[a-zA-Z0-9_]+)\s+["\']?([^"\'\n\r]+)["\']?', line.strip(), re.I)
+        if cvar_match:
+            c_name = cvar_match.group(1).lower()
+            c_val = cvar_match.group(2).strip()
+            self._handle_dynamic_setting_change(c_name, c_val, source="in-game")
+
+        # Player Name Changes (e.g. "Emiel" changed name to "Emiel [TF2]")
+        name_match = re.search(r'["\']?([^"\'\n\r]+)["\']?\s+changed name to\s+["\']?([^"\'\n\r]+)["\']?', line, re.I)
+        if name_match:
+            p_old, p_new = name_match.group(1).strip(), name_match.group(2).strip()
+            print(f"[{APP_NAME}] 🔄 Player name changed: '{p_old}' -> '{p_new}'", flush=True)
+            self.send_cmd(f'echo "[P-REC External] Name updated: {p_new}"')
+
+        # Bookmark placed (F8 / ds_mark)
+        if re.search(r'(?:Demo bookmark placed|Bookmark placed|\[DemoSupport\]\s+Bookmark)', line, re.I):
+            print(f"[{APP_NAME}] 🔖 Bookmark placed in active demo ({self.current_demo_name}.dem)", flush=True)
+            self.send_cmd(f'echo "[P-REC External] Bookmark placed in {self.current_demo_name}.dem"')
+            if self.cfg.prec_notify >= 1 and self.cfg.pr_message_mark:
+                self.send_cmd(self.cfg.pr_message_mark)
+
         map_match = re.search(r"(?:Map:\s+|map\s*:\s+)([a-zA-Z0-9_]+)", line, re.I)
         if map_match:
             new_map = map_match.group(1)
             if new_map != self.current_map:
+                old_map = self.current_map
                 self.current_map = new_map
                 prefix = self.get_demo_prefix()
                 if prefix:
                     self.send_cmd(f'ds_prefix "{prefix}"')
+                print(f"[{APP_NAME}] 🔄 Map changed: '{old_map or 'None'}' -> '{new_map}' (Demo Prefix: {prefix})", flush=True)
+                self.send_cmd(f'echo "[P-REC External] Map updated: {new_map}"')
 
         red_match = re.search(r'mp_tournament_redteamname(?: changed to)?\s+"?([^"\n\r]+)"?', line, re.I)
         if red_match:
             raw = red_match.group(1).strip()
             clean = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw.lower())
             clean = re.sub(r'_+', '_', clean).strip('_')
-            if clean:
+            if clean and clean != self.current_red_team:
+                old_team = self.current_red_team
                 self.current_red_team = clean
+                print(f"[{APP_NAME}] 🔄 Tournament RED Team changed: '{old_team}' -> '{clean}'", flush=True)
+                self.send_cmd(f'echo "[P-REC External] Team RED updated: {raw} ({clean})"')
 
         blu_match = re.search(r'mp_tournament_blueteamname(?: changed to)?\s+"?([^"\n\r]+)"?', line, re.I)
         if blu_match:
             raw = blu_match.group(1).strip()
             clean = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw.lower())
             clean = re.sub(r'_+', '_', clean).strip('_')
-            if clean:
+            if clean and clean != self.current_blu_team:
+                old_team = self.current_blu_team
                 self.current_blu_team = clean
+                print(f"[{APP_NAME}] 🔄 Tournament BLU Team changed: '{old_team}' -> '{clean}'", flush=True)
+                self.send_cmd(f'echo "[P-REC External] Team BLU updated: {raw} ({clean})"')
 
         conn_match = re.search(r"Connecting to\s+([a-zA-Z0-9_\-\.\:]+)", line)
         if conn_match:
@@ -3595,7 +3804,7 @@ class PrecEngine:
             self.is_tournament = True
             if self.cfg.prec_mode >= 2 and not self.is_recording:
                 reconnect_note = "Mid-Match Reconnect" if self.was_in_match else "Mid-Game Join / Substitute"
-                self.start_recording(f"Tournament Whitelist Active ({reconnect_note})")
+                self.start_recording(f"Tournament Whitelist Active ({reconnect_note})", is_resume=True)
             return
 
         if "[SOAP] Match is starting" in line or "[SOAP] Match begins" in line:
@@ -3619,8 +3828,8 @@ class PrecEngine:
             return
 
         if 'World triggered "Round_Start"' in line:
-            if self.is_tournament or self.cfg.prec_mode == 3:
-                self.start_recording("Round Start")
+            if (self.is_tournament or self.cfg.prec_mode == 3) and not self.is_recording:
+                self.start_recording("Round Start (Match Continued)", is_resume=True)
             return
 
         # Player spawn or connection established -> inspect server tournament state
@@ -3707,10 +3916,10 @@ class PrecEngine:
             self.is_tournament = True
             if is_reconnect:
                 print(f"[{APP_NAME}] ⚡ Rejoined active match on {self.current_map} ({self.current_server_ip}) — resuming recording!", flush=True)
-                self.start_recording("Mid-Match Reconnect (ETF2L Rule 2.1 Recovery)")
+                self.start_recording("Mid-Match Reconnect (ETF2L Rule 2.1 Recovery)", is_resume=True)
             else:
                 print(f"[{APP_NAME}] ⚡ Joined live tournament match in-progress (mp_tournament 1 active) — starting recording!", flush=True)
-                self.start_recording("Mid-Game Substitute / Tournament Join (mp_tournament 1)")
+                self.start_recording("Mid-Game Substitute / Tournament Join (mp_tournament 1)", is_resume=True)
 
     def run(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())

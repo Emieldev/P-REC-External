@@ -8,9 +8,10 @@
 ---
 
 ### 💡 Why This Exists (The Vibecoded Backstory)
-> *"I got completely fed up with **PeachREC being shit** (causing microstutters and frame drops with synchronous HUD animation loops) and the original **P-REC not working** on modern 64-bit TF2 without `-insecure` (which VAC bans match servers). So I vibecoded this companion for myself to have zero game lag, zero warmup bloat, and total competitive league compliance."*
+> *"I got fed up with PeachREC microstutters making it unusable and causing start of round lag with many HUDs, and the original **P-REC not working** on modern 64-bit TF2 without `-insecure` (which Valve requires for unsigned plugins, blocking connection to VAC match servers). So I vibecoded this companion for myself to have zero game lag, zero warmup bloat, and total competitive league compliance."*
 
-⚠️ **Disclaimer:** This project is 100% community vibecoded with AI. While architecturally **100% VAC-safe** (using official Source Engine RCON loopback sockets with zero memory tampering and zero DLL injection), always test during scrims before major tournament matches!
+⚠️ **Player Responsibility Disclaimer:**
+In all competitive leagues (ETF2L, RGL, ozfortress, AsiaFortress, etc.), **it remains the player's personal responsibility to ensure your POV demos are actively recording and saved**. While this software is architecturally **100% VAC-safe** (using official Source Engine RCON and Netcon loopback protocols with zero memory injection, zero DLL hooking, and zero modified game binaries), always verify your in-game developer console (`~`) confirmations, check your demo folder after matches, and test during scrims before major tournament fixtures!
 
 ---
 
