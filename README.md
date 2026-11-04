@@ -54,6 +54,7 @@ When running on Windows, P-REC External lives quietly in your system tray under 
   * **Start with Windows:** 1-click toggle to boot silently with Windows directly into your hidden system tray.
   * **Go to Settings (PREC_Settings.cfg):** Quick one-click configuration access.
   * **Open tf/custom/ Folder:** Instantly opens your TF2 mods folder in File Explorer.
+  * **Uninstall P-REC External...:** Complete uninstaller with confirmation and option to keep or wipe settings files.
   * **Close P-REC External:** Stops recording cleanly, frees ports, and shuts down the background process.
 
 ---
@@ -164,6 +165,17 @@ python3 prec64.py --install
    * **Explicitly asks whether to update configs in bulk or file-by-file (one by one)** with full diff previews.
    * Automatically creates `.cfg.bak` backups before modifying anything.
 7. **Outputs Ready-to-Use Steam Launch Options!**
+
+### 🗑️ Clean 1-Click Uninstallation
+P-REC External can be completely uninstalled at any time:
+* **Via System Tray (Hidden Pictograms):** Right-click the **Supreme Soviet** icon and click **"Uninstall P-REC External..."**.
+  1. **Confirmation Check:** Asks for confirmation before making any changes.
+  2. **Keep Settings Choice:** Asks whether to **Keep your settings** (preserving your `PREC_Settings.cfg` and custom league files) or perform a 100% complete wipe.
+* **Via Command Line:**
+  ```bash
+  prec64.exe --uninstall
+  ```
+The uninstaller automatically removes the startup registry key, desktop shortcut, clean-strips `autoexec.cfg` bindings, removes the application binary directory, and optionally wipes custom configuration folders.
 
 ---
 

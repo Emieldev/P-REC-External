@@ -1207,6 +1207,53 @@ def apply_cfg_update(cfg_path: Path, cfg_filename="PREC_Settings.cfg"):
         f.write(updated)
 
 
+def clean_autoexec_prec(tf_path: Path):
+    """Safely cleans P-REC lines and commands from active autoexec.cfg."""
+    if not tf_path:
+        return
+    autoexec = find_target_autoexec(tf_path)
+    if not autoexec or not autoexec.exists():
+        return
+    try:
+        lines = autoexec.read_text(encoding="utf-8", errors="ignore").splitlines()
+        filtered = []
+        skip_prec_block = False
+        for line in lines:
+            if "P-REC" in line and ("MATCH RECORDER" in line or "Recording External Companion" in line or "=====" in line):
+                skip_prec_block = True
+                continue
+            if skip_prec_block:
+                if line.strip() == "" or line.startswith("//") or "exec" in line.lower() or "ds_" in line.lower() or "sv_rcon" in line.lower() or "removeip" in line.lower() or "ds_mark" in line.lower():
+                    if "exec" in line.lower() and ("prec_settings" in line.lower() or "settings.cfg" in line.lower()):
+                        skip_prec_block = False
+                    continue
+                else:
+                    skip_prec_block = False
+
+            if re.search(r'^\s*exec\s+(?:PREC_Settings|Settings)\.cfg', line, re.I):
+                continue
+            if re.search(r'^\s*bind\s+["\']?F8["\']?\s+["\']?ds_mark["\']?', line, re.I):
+                continue
+            if re.search(r'^\s*sv_rcon_whitelist_address\s+["\']?127\.0\.0\.1["\']?', line, re.I):
+                continue
+            if re.search(r'^\s*removeip\s+127\.0\.0\.1', line, re.I):
+                continue
+
+            m = re.match(r'^\s*//\s*(exec\s+peachrec.*)\s*\(disabled for P-REC\)', line, re.I)
+            if m:
+                filtered.append(m.group(1))
+                continue
+
+            filtered.append(line)
+
+        cleaned_text = "\n".join(filtered)
+        cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text).strip() + "\n"
+        autoexec.write_text(cleaned_text, encoding="utf-8")
+        print(f"[UNINSTALL] Cleaned P-REC entries from: {autoexec}", flush=True)
+    except Exception as e:
+        print(f"[UNINSTALL] Note: Could not update autoexec: {e}", flush=True)
+
+
 def show_manual_cfg_instructions(cfg_file: Path, cfg_filename="PREC_Settings.cfg", tf_path: Path = None):
     """
     Displays explicit manual configuration instructions for a declined file,
@@ -1781,6 +1828,196 @@ removeip 127.0.0.1
 
 
 # ====================================================================
+# Uninstallation Logic (System Tray & CLI)
+# ====================================================================
+
+def prompt_uninstall_choices():
+    """
+    Prompts the user for uninstallation confirmation and whether to keep settings.
+    Returns True to keep settings, False to wipe settings, or None if cancelled.
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            MB_YESNO = 0x00000004
+            MB_YESNOCANCEL = 0x00000003
+            MB_ICONQUESTION = 0x00000020
+            MB_DEFBUTTON2 = 0x00000100
+            IDYES = 6
+            IDNO = 7
+            IDCANCEL = 2
+
+            # Step 1: Confirmation
+            confirm = user32.MessageBoxW(
+                0,
+                f"Are you sure you want to uninstall {APP_NAME}?",
+                f"Uninstall {APP_NAME}",
+                MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2
+            )
+            if confirm != IDYES:
+                return None
+
+            # Step 2: Keep Settings or Not
+            prompt_text = (
+                "Do you want to KEEP your configuration and league settings files?\n\n"
+                "• Click YES to keep your settings (PREC_Settings.cfg, aliases, and custom league files).\n"
+                "• Click NO to completely remove all settings, configs, and P-REC folders.\n"
+                "• Click CANCEL to abort uninstallation."
+            )
+            settings_choice = user32.MessageBoxW(
+                0,
+                prompt_text,
+                f"{APP_NAME} Uninstall — Settings",
+                MB_YESNOCANCEL | MB_ICONQUESTION
+            )
+            if settings_choice == IDCANCEL:
+                return None
+            return (settings_choice == IDYES)
+        except Exception:
+            pass
+
+    if is_interactive():
+        print("\n" + "=" * 65, flush=True)
+        print(f" [UNINSTALL {APP_NAME.upper()}]", flush=True)
+        print("=" * 65, flush=True)
+        ans = input(f"Are you sure you want to completely uninstall {APP_NAME}? [y/N]: ").strip().lower()
+        if ans not in ("y", "yes"):
+            print("[CANCELLED] Uninstallation aborted.", flush=True)
+            return None
+        keep_ans = input("Keep your configuration and settings files (PREC_Settings.cfg)? [Y/n]: ").strip().lower()
+        return keep_ans not in ("n", "no")
+
+    return None
+
+
+def execute_uninstall(keep_settings: bool, tf_path="", config_path=""):
+    """
+    Executes the clean removal of P-REC External:
+    - Removes Windows Startup registry key / Linux autostart entry
+    - Removes Desktop shortcut
+    - Cleans autoexec.cfg if requested
+    - Removes settings / custom folder if keep_settings is False
+    - Schedules self-deletion of executable and program directory
+    - Displays confirmation dialog and exits
+    """
+    print(f"\n[{APP_NAME}] Beginning uninstallation (keep_settings={keep_settings})...", flush=True)
+
+    # 1. Remove from Windows Startup (registry) or Linux autostart
+    try:
+        set_startup(False)
+        print("[UNINSTALL] Removed from system startup.", flush=True)
+    except Exception as e:
+        print(f"[UNINSTALL] Note on startup removal: {e}", flush=True)
+
+    # 2. Remove Desktop shortcut
+    try:
+        if sys.platform == "win32":
+            desktop_dirs = [
+                Path(os.environ.get("USERPROFILE", "")) / "Desktop",
+                Path(os.environ.get("PUBLIC", "")) / "Desktop",
+            ]
+            for d in desktop_dirs:
+                lnk = d / f"{APP_NAME}.lnk"
+                if lnk.exists():
+                    lnk.unlink()
+                    print(f"[UNINSTALL] Removed desktop shortcut: {lnk}", flush=True)
+        else:
+            for p in (Path.home() / "Desktop/prec64.desktop", Path.home() / ".local/share/applications/prec64.desktop"):
+                if p.exists():
+                    p.unlink()
+    except Exception as e:
+        print(f"[UNINSTALL] Note on shortcut removal: {e}", flush=True)
+
+    # 3. Clean autoexec.cfg and settings files
+    effective_tf = Path(tf_path) if tf_path else detect_tf2_directory()
+    if effective_tf and effective_tf.exists():
+        if not keep_settings:
+            clean_autoexec_prec(effective_tf)
+            custom_prec = effective_tf / "custom/P-REC"
+            if custom_prec.exists():
+                try:
+                    shutil.rmtree(custom_prec, ignore_errors=True)
+                    print(f"[UNINSTALL] Removed custom directory: {custom_prec}", flush=True)
+                except Exception as e:
+                    print(f"[UNINSTALL] Error removing {custom_prec}: {e}", flush=True)
+            cfg_in_cfg = effective_tf / "cfg/PREC_Settings.cfg"
+            if cfg_in_cfg.exists():
+                try:
+                    cfg_in_cfg.unlink()
+                except Exception:
+                    pass
+        else:
+            print("[UNINSTALL] Preserving configuration files in tf/custom/P-REC/ and tf/cfg/.", flush=True)
+
+    # 4. Schedule self-deletion of program directory & executable
+    current_exe = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve()
+    
+    if sys.platform == "win32":
+        local_appdata = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))
+        prog_dir = Path(local_appdata) / "Programs/P-REC"
+    else:
+        prog_dir = Path.home() / ".local/share/P-REC"
+
+    # 5. Show completion dialog to user
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            settings_note = (
+                "Your configuration and settings files were preserved."
+                if keep_settings else
+                "All settings, configs, and P-REC folders have been completely removed."
+            )
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f"P-REC External has been successfully uninstalled from your computer.\n\n{settings_note}",
+                f"{APP_NAME} — Uninstall Complete",
+                0x00000000 | 0x00000040  # MB_OK | MB_ICONINFORMATION
+            )
+        except Exception:
+            pass
+    print("[UNINSTALL] P-REC External has been successfully uninstalled.", flush=True)
+
+    # 6. Execute self-deletion after process terminates
+    is_git_repo = (current_exe.parent / ".git").exists() or (current_exe.parent.parent / ".git").exists()
+    if sys.platform == "win32":
+        try:
+            pid = os.getpid()
+            delete_exe = f'del /f /q \\"{current_exe}\\" &' if not is_git_repo else ""
+            delete_dir = f'rmdir /s /q \\"{prog_dir}\\"' if prog_dir.exists() and prog_dir != current_exe.parent and not is_git_repo else (f'rmdir /s /q \\"{prog_dir}\\"' if prog_dir.exists() and not is_git_repo else "")
+            
+            cmd = f'cmd.exe /c "timeout /t 1 /nobreak >nul & :loop & tasklist /FI \\"PID eq {pid}\\" 2>nul | find \\"{pid}\\" >nul && (timeout /t 1 /nobreak >nul & goto loop) & {delete_exe} {delete_dir}"'
+            DETACHED_PROCESS = 0x00000008
+            CREATE_NO_WINDOW = 0x08000000
+            subprocess.Popen(cmd, shell=True, creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW)
+        except Exception:
+            pass
+    else:
+        try:
+            if not is_git_repo and current_exe.exists():
+                current_exe.unlink(missing_ok=True)
+            if prog_dir.exists() and not is_git_repo:
+                shutil.rmtree(prog_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    os._exit(0)
+
+
+def run_uninstaller():
+    existing_cfg = find_existing_config()
+    tf_dir = detect_tf2_directory()
+    keep_settings = prompt_uninstall_choices()
+    if keep_settings is None:
+        return
+    execute_uninstall(
+        keep_settings=keep_settings,
+        tf_path=str(tf_dir) if tf_dir else "",
+        config_path=str(existing_cfg) if existing_cfg else ""
+    )
+
+
+# ====================================================================
 # Source RCON Implementation (Zero-Dependency)
 # ====================================================================
 
@@ -2309,6 +2546,7 @@ class WindowsSystemTray:
         self.tf_path = str(tf_path) if tf_path else ""
         self.on_exit_callback = on_exit_callback
         self.on_check_conn_callback = None
+        self.on_uninstall_callback = None
         self.status = "Waiting for TF2..."
         self.hwnd = None
         self.nid = None
@@ -2489,7 +2727,8 @@ class WindowsSystemTray:
             ID_CUSTOM_DIR = 1006
             ID_UPDATE = 1007
             ID_SHORTCUT = 1008
-            ID_EXIT = 1009
+            ID_UNINSTALL = 1009
+            ID_EXIT = 1010
 
             class NOTIFYICONDATAW(ctypes.Structure):
                 _fields_ = [
@@ -2556,6 +2795,7 @@ class WindowsSystemTray:
                 user32.AppendMenuW(h_menu, MF_STRING, ID_CUSTOM_DIR, "Open tf/custom/ Folder")
                 user32.AppendMenuW(h_menu, MF_STRING, ID_SHORTCUT, "Create Desktop Shortcut")
                 user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
+                user32.AppendMenuW(h_menu, MF_STRING, ID_UNINSTALL, "Uninstall P-REC External...")
                 user32.AppendMenuW(h_menu, MF_STRING, ID_EXIT, f"Close {APP_NAME}")
 
                 pt = POINT()
@@ -2593,6 +2833,11 @@ class WindowsSystemTray:
                         self.open_custom_folder()
                     elif cmd_id == ID_SHORTCUT:
                         create_desktop_shortcut()
+                    elif cmd_id == ID_UNINSTALL:
+                        if getattr(self, "on_uninstall_callback", None):
+                            threading.Thread(target=self.on_uninstall_callback, daemon=True).start()
+                        else:
+                            threading.Thread(target=run_uninstaller, daemon=True).start()
                     elif cmd_id == ID_EXIT:
                         self.running = False
                         user32.DestroyWindow(hwnd)
@@ -2711,6 +2956,7 @@ class PrecEngine:
             on_exit_callback=self.stop_all
         )
         self.tray.on_check_conn_callback = self.check_connection
+        self.tray.on_uninstall_callback = self.uninstall
         self.tray.start()
 
         # Show console window on startup unless explicitly launched silently via --tray or --minimized
@@ -2852,6 +3098,46 @@ class PrecEngine:
         if self.tray:
             self.tray.close()
         os._exit(0)
+
+    def uninstall(self):
+        keep_settings = prompt_uninstall_choices()
+        if keep_settings is None:
+            return
+
+        print(f"\n[{APP_NAME}] Uninstallation confirmed. Stopping operations...", flush=True)
+        if getattr(self, "status_screenshot_timer", None):
+            try:
+                self.status_screenshot_timer.cancel()
+            except Exception:
+                pass
+            self.status_screenshot_timer = None
+
+        if self.is_recording:
+            try:
+                self.stop_recording("Uninstalling P-REC")
+            except Exception:
+                pass
+
+        try:
+            if self.sender:
+                self.sender.close()
+                self.sender = None
+            if self.tailer:
+                self.tailer.stop()
+        except Exception:
+            pass
+
+        if self.tray:
+            try:
+                self.tray.close()
+            except Exception:
+                pass
+
+        execute_uninstall(
+            keep_settings=keep_settings,
+            tf_path=self.cfg.prec_tf_path,
+            config_path=self.cfg.cfg_path
+        )
 
     def query_tournament_teams(self):
         """Queries TF2 for active tournament red and blu team names."""
@@ -3600,6 +3886,10 @@ if __name__ == "__main__":
                 ctypes.windll.user32.ShowWindow(h_con, 0)  # SW_HIDE
         except Exception:
             pass
+
+    if any(arg in sys.argv for arg in ("--uninstall", "-u", "/uninstall")):
+        run_uninstaller()
+        sys.exit(0)
 
     if any(arg in sys.argv for arg in ("--shortcut", "--create-shortcut")):
         create_desktop_shortcut()
