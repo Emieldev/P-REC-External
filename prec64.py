@@ -3799,13 +3799,16 @@ class PrecEngine:
                 self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)")
             return
 
-        # Whitelist enforcement message: indicates active tournament whitelist on server
+        # Whitelist enforcement message: confirms tournament mode active on server (does NOT mean match is live)
         if re.search(r"has been disabled in this tournament match by the server whitelist", line, re.I):
             self.is_tournament = True
-            if self.cfg.prec_mode >= 2 and not self.is_recording:
-                reconnect_note = "Mid-Match Reconnect" if self.was_in_match else "Mid-Game Join / Substitute"
-                self.start_recording(f"Tournament Whitelist Active ({reconnect_note})", is_resume=True)
             return
+
+        # SOAP DM active deathmatch messages: indicates pregame warmup is actively underway
+        if re.search(r"\[SOAP\]\s+(?:Your attacker had|Spawned in|Killstreak|Healing done)", line, re.I):
+            if self.is_recording and self.cfg.prec_mode == 2:
+                self.stop_recording("Warmup Active (SOAP DM running)")
+            self.was_in_match = False
 
         if "[SOAP] Match is starting" in line or "[SOAP] Match begins" in line:
             self.is_tournament = True
@@ -3828,7 +3831,9 @@ class PrecEngine:
             return
 
         if 'World triggered "Round_Start"' in line:
-            if (self.is_tournament or self.cfg.prec_mode == 3) and not self.is_recording:
+            if self.cfg.prec_mode == 3 and not self.is_recording:
+                self.start_recording("Round Start (Mode 3)")
+            elif self.was_in_match and not self.is_recording:
                 self.start_recording("Round Start (Match Continued)", is_resume=True)
             return
 
@@ -3906,20 +3911,15 @@ class PrecEngine:
                             self.tray.update_status(f"{prof.get('name')} [{mode_label}]")
                     break
 
-        # 3. Check if reconnecting to the same match or joining midgame as substitute
+        # 3. Check if reconnecting to an ongoing match that was interrupted (ETF2L Rule 2.1)
         is_reconnect = self.was_in_match and (
             (self.current_server_ip and self.current_server_ip == self.last_connected_server) or
             (self.current_map and self.current_map == self.last_connected_map)
         )
 
-        if (self.is_tournament or is_reconnect) and self.cfg.prec_mode >= 2 and not self.is_recording:
-            self.is_tournament = True
-            if is_reconnect:
-                print(f"[{APP_NAME}] ⚡ Rejoined active match on {self.current_map} ({self.current_server_ip}) — resuming recording!", flush=True)
-                self.start_recording("Mid-Match Reconnect (ETF2L Rule 2.1 Recovery)", is_resume=True)
-            else:
-                print(f"[{APP_NAME}] ⚡ Joined live tournament match in-progress (mp_tournament 1 active) — starting recording!", flush=True)
-                self.start_recording("Mid-Game Substitute / Tournament Join (mp_tournament 1)", is_resume=True)
+        if is_reconnect and self.cfg.prec_mode >= 2 and not self.is_recording:
+            print(f"[{APP_NAME}] ⚡ Rejoined active match on {self.current_map} ({self.current_server_ip}) — resuming recording!", flush=True)
+            self.start_recording("Mid-Match Reconnect (ETF2L Rule 2.1 Recovery)", is_resume=True)
 
     def run(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
