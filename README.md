@@ -110,8 +110,8 @@ Competitive leagues enforce strict POV demo recording rules with severe penaltie
 ### 1. European TF2 League ([ETF2L Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos))
 * **The Problem:** ETF2L strictly mandates that demos must cover the entire match. If your game crashes or you drop and reconnect mid-game, Valve's built-in `ds_enable 3` will NOT resume recording because the tournament mode wasn't restarted. Furthermore, ETF2L strictly mandates capturing proof of all players' SteamIDs and SourceTV status.
 * **What P-REC External Adds:**
-  * **Mid-match reconnect recovery:** Detects reconnections and sends `status` to verify match state, immediately resuming recording if the tournament match is in progress.
-  * **Automated Status Screenshot:** Automatically triggers `status; jpeg` at match completion, saving the screenshot directly into your demo/screenshot folder with complete SteamID proof.
+  * **Mid-match reconnect recovery:** Detects reconnections and sends `status` to verify match state, immediately resuming recording if the tournament match is in progress (or if substituting in mid-game).
+  * **Automated Status Screenshot:** Automatically triggers an in-game `status; jpeg` screenshot randomly after 3 minutes of active tournament play (strict ETF2L Rule 2.1 compliance) and captures the scoreboard at match completion.
 
 ### 2. AsiaFortress ([AsiaFortress Rules](https://docs.google.com/document/d/16D6nGRbq1ZafMtR1uBOfnvC3jJ4K4lPzqbrB6lqDQ74/edit?tab=t.0#heading=h.rdjxx5582d9w))
 * **The Problem:** AsiaFortress rules strictly mandate that all players must record first-person POV demos for all official cup and league matches. Demos must be submitted upon admin request within strict deadlines, and failure to provide POV demos results in round forfeits or match bans.
@@ -273,11 +273,11 @@ All league rules are stored as independent JSON files in the [`leagues/`](league
 | :--- | :--- | :--- |
 | `prec_version` | `"1.0.0"` | Current configuration version. |
 | `prec_league` | `"etf2l"` | Default league profile (`etf2l`, `asiafortress`, `rgl`, `ozfortress`, `matcha`, `cltf2`, `custom`). Automatically switches when match configs execute. |
-| `prec_mode` | `2` | `0` = Off, `1` = Custom named only, `2` = Record active tournament matches only, `3` = Record all matches. |
+| `prec_mode` | `2` | `3` = Record ALL matches (every map/round), `2` = Record tournament matches only (Default), `1` = Manual recording, `0` = Disabled. |
 | `prec_dir` | `"demos"` | Folder inside `/tf/` where demo files are saved. |
 | `prec_sound` | `1` | `1` = Play audio cue on start/stop, `0` = Mute. |
 | `prec_hide_to_tray` | `1` | `1` = Hide console window into Windows System Tray (Hidden Pictograms), `0` = Keep console window open. |
-| `prec_screens` | `1` | `1` = Capture status & scoreboard screenshot at match end. Automatically suppressed during scrims. |
+| `prec_screens` | `1` | `1` = Capture in-game status screenshot (randomly after 3 mins of play) & match-end scoreboard. Automatically suppressed during scrims. |
 | `prec_notify` | `1` | `0` = Console only, `1` = Team chat announcements, `2` = HUD notification. |
 | `prec_delete_useless_demo` | `0` | `0` = Never delete (strictly required for league compliance). |
 | `prec_tag` | `""` | Custom prefix tag for demo names (leave blank for league default). |
