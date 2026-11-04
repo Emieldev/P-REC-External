@@ -37,7 +37,7 @@
 | **Strict League Compliance** | Dedicated modular rulesets for **ETF2L**, **AsiaFortress**, **RGL**, **ozfortress**, **Matcha.tf**, and **CLTF2**. | Automatically captures required SteamID status screenshots (`status; jpeg`) and handles server checks. |
 | **Crash & Reconnect Recovery** | Detects active tournament rounds if you crash and reconnect mid-match, resuming recording immediately. | Complies strictly with [ETF2L Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos). Built-in TF2 recording fails to resume if you reconnect. |
 | **Silent Background Tray & Auto-Start** | Runs quietly under Hidden Pictograms and can boot with Windows automatically. Hooks into TF2 with just `-netconport 2121`. | Never forget to record an official match again. |
-| **Centralized `tf/custom/` Install** | Installs cleanly into `tf/custom/P-REC/` for one-stop file management alongside your HUD and configs. | Keeps all your competitive files neatly organized in one folder. |
+| **Discord-Safe Background Install** | Installs into dedicated program folder while placing configs in `tf/custom/P-REC/cfg/` — avoids Discord falsely reporting you as playing TF2 24/7. | Putting executables in `steamapps/common/` causes Discord to report you playing TF2 constantly. |
 
 ---
 
@@ -157,7 +157,7 @@ python3 prec64.py --install
 3. **Scans `/tf/custom/` for Conflicting Mods:**
    * Detects and removes PeachREC HUD animation loops (`hudanimations_peachrec.txt` and `hudanimations_manifest.txt` hooks) that cause game lag.
    * Cleans up legacy 32-bit `prec.dll` / `prec.vdf` files that cannot load on 64-bit TF2.
-4. **Installs into `/tf/custom/P-REC/`:** Places the app, configs, and modular league rules in one tidy location.
+4. **Installs Cleanly Outside Steam:** Places the executable into `%LOCALAPPDATA%\Programs\P-REC\` and configuration into `/tf/custom/P-REC/cfg/` (preventing Discord false game detection).
 5. **Discovers Modular League Profiles:** Displays all rulesets found in `leagues/*.json`.
 6. **Audits `/tf/cfg/overrides/` and `/tf/cfg/`:**
    * Discovers existing config files (`autoexec.cfg`, `game_overrides.cfg`, etc.).

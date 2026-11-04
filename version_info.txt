@@ -19,7 +19,7 @@ VSVersionInfo(
           '040904B0',
           [
             StringStruct('CompanyName', 'P-REC Community Team'),
-            StringStruct('FileDescription', 'P-REC External - TF2 64-Bit Match Recorder'),
+            StringStruct('FileDescription', 'P-REC External Companion'),
             StringStruct('FileVersion', '1.0.0.0'),
             StringStruct('InternalName', 'prec64'),
             StringStruct('LegalCopyright', 'Copyright (C) 2026 GNU GPL-3.0'),

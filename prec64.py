@@ -809,7 +809,7 @@ def set_startup(enable: bool, exe_path: Path = None) -> bool:
             import winreg
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_ALL_ACCESS) as key:
                 if enable:
-                    winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
+                    winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, f'"{exe_path}" --tray')
                 else:
                     try:
                         winreg.DeleteValue(key, REG_APP_NAME)
@@ -827,7 +827,7 @@ def set_startup(enable: bool, exe_path: Path = None) -> bool:
                 autostart_dir.mkdir(parents=True, exist_ok=True)
                 content = f"""[Desktop Entry]
 Type=Application
-Exec="{exe_path}"
+Exec="{exe_path}" --tray
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -1443,26 +1443,37 @@ def run_setup_wizard():
     else:
         print("[OK] No conflicting mods found in /tf/custom/.\n", flush=True)
 
-    # 3. Target installation in tf/custom/P-REC
-    custom_dir = tf_path / "custom"
-    app_install_dir = custom_dir / "P-REC"
-    print(f"Target installation directory:\n -> {app_install_dir.resolve()}", flush=True)
-
-    if is_interactive():
-        confirm_custom = input("Install app and settings into this custom folder for easy file management? [Y/n]: ").strip().lower()
+    # 3. Target installation directories
+    # Note: Installing application executables inside steamapps/common/ causes Discord
+    # and game overlays to falsely report you as playing Team Fortress 2.
+    # Therefore, we install the binary in a dedicated program folder outside Steam,
+    # and keep PREC_Settings.cfg inside tf/custom/P-REC/cfg/ where TF2 loads it.
+    if sys.platform == "win32":
+        local_appdata = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))
+        app_install_dir = Path(local_appdata) / "Programs/P-REC"
     else:
-        confirm_custom = "y"
+        app_install_dir = Path.home() / ".local/share/P-REC"
 
-    if confirm_custom != 'n':
-        app_install_dir.mkdir(parents=True, exist_ok=True)
-        target_dir = app_install_dir
-    else:
-        target_dir = get_app_dir()
+    app_install_dir.mkdir(parents=True, exist_ok=True)
+    custom_cfg_dir = tf_path / "custom/P-REC"
+    custom_cfg_dir.mkdir(parents=True, exist_ok=True)
+    target_dir = app_install_dir
+
+    # Automatically purge legacy binaries from steamapps/common/.../P-REC/ to stop Discord false detection
+    for old_exe in (custom_cfg_dir / "prec64.exe", custom_cfg_dir / "prec64"):
+        if old_exe.exists():
+            try:
+                old_exe.unlink()
+            except Exception:
+                pass
+
+    print(f"Target program directory: {app_install_dir.resolve()}", flush=True)
+    print(f"Target settings directory: {custom_cfg_dir.resolve()}", flush=True)
 
     # 4. Check for existing PREC_Settings.cfg / Settings.cfg to preserve user settings
     existing_cfg = None
     for cand_name in DEFAULT_CONFIG_FILES:
-        for cand_dir in (target_dir, get_app_dir(), tf_path / "custom/P-REC", tf_path / "cfg"):
+        for cand_dir in (custom_cfg_dir, custom_cfg_dir / "cfg", target_dir, get_app_dir(), tf_path / "cfg"):
             cand = cand_dir / cand_name
             if cand.exists():
                 existing_cfg = cand.resolve()
@@ -1532,18 +1543,18 @@ def run_setup_wizard():
             rcon_pw = secrets.token_hex(6)
             print(f"[SECURITY] Generated secure random RCON password: {rcon_pw}", flush=True)
 
-        # 6. Write PREC_Settings.cfg to target_dir (new file only)
-        cfg_target = target_dir / "PREC_Settings.cfg"
+        # 6. Write PREC_Settings.cfg to custom_cfg_dir (new file only)
+        cfg_target = custom_cfg_dir / "PREC_Settings.cfg"
         write_wizard_config(cfg_target, selected_league, rcon_pw, str(tf_path.resolve()))
         print(f"[OK] Configuration saved: {cfg_target.resolve()}", flush=True)
 
-    # 7. Copy binary / script & leagues directory into tf/custom/P-REC if requested
+    # 7. Copy binary / script & leagues directory into app_install_dir
     current_exe = Path(sys.executable) if getattr(sys, 'frozen', False) else get_app_dir() / "prec64.py"
     if target_dir != get_app_dir() and current_exe.exists():
         try:
             dest_file = target_dir / current_exe.name
             shutil.copy2(current_exe, dest_file)
-            print(f"[OK] Copied application binary to: {dest_file.resolve()}", flush=True)
+            print(f"[OK] Installed application binary to: {dest_file.resolve()}", flush=True)
         except Exception as e:
             print(f"[INFO] Using application from: {current_exe.resolve()} ({e})", flush=True)
 
@@ -3565,6 +3576,8 @@ def find_existing_config():
         search_dirs.extend([
             tf_dir / f"custom/{APP_NAME}/cfg",
             tf_dir / f"custom/{APP_NAME}",
+            tf_dir / "custom/P-REC/cfg",
+            tf_dir / "custom/P-REC",
             tf_dir / "custom/prec64/cfg",
             tf_dir / "custom/prec64",
             tf_dir / "custom",
