@@ -429,35 +429,46 @@ class PrecConfig:
 
     def _generate_default_cfg(self):
         default_content = """// ====================================================================
-// P-REC: Point-of-view Recording External Companion
+// P-REC External — Settings & Configuration
 // ====================================================================
-// ⚠️ 100% Vibecoded Application — Use at your own risk.
+// High-performance automated match recorder for Team Fortress 2 (64-bit).
+// Works seamlessly with mastercomfig, m0rehud, and DemoMan.
 // ====================================================================
+
+// Engine Compatibility Aliases (Suppresses console warnings in TF2)
+alias prec_league              ""
+alias prec_mode                ""
+alias prec_dir                 ""
+alias prec_sound               ""
+alias prec_screens             ""
+alias prec_notify              ""
+alias prec_tag                 ""
+alias prec_demo_name           ""
+alias prec_min_streak          ""
+alias prec_kill_delay          ""
+alias prec_log                 ""
+alias prec_server_rcon_passwords ""
 
 prec_league              "etf2l"
 prec_mode                2
 prec_dir                 "demos"
 prec_sound               1
-prec_hide_to_tray        1
 prec_screens             1
 prec_notify              1
-prec_min_streak          3
-prec_kill_delay          15
-prec_log                 0
-prec_delete_useless_demo 0
-prec_stv_status          1
 prec_tag                 ""
+prec_demo_name           "%date%_%time%_%map%_%red%_%blu%"
 
 alias pr_message_start "say_team [P-REC] Recording started."
 alias pr_message_stop  "say_team [P-REC] Stop recording."
 alias pr_message_mark  "say_team [P-REC] Bookmark placed."
 
-prec_connection_mode     "auto"
-prec_rcon_port           27969
-prec_rcon_password       ""
+prec_min_streak          3
+prec_kill_delay          15
+prec_log                 0
 prec_server_rcon_passwords ""
-prec_netcon_port         2121
-prec_tf_path             ""
+
+sv_rcon_whitelist_address "127.0.0.1"
+removeip 127.0.0.1
 """
         with open(self.cfg_path, "w", encoding="utf-8") as f:
             f.write(default_content)
@@ -1621,33 +1632,36 @@ def write_wizard_config(path: Path, league: str, rcon_pw: str, tf_path: str):
         print(f"[CONFIG] '{path.resolve()}' already exists. Preserving existing settings without overwriting.", flush=True)
         return
     content = f"""// ====================================================================
-// {APP_FULL_TITLE}
+// {APP_FULL_TITLE} — Settings & Configuration
 // ====================================================================
-// ⚠️ 100% Vibecoded Application — Use at your own risk.
+// Works seamlessly with mastercomfig, m0rehud, and DemoMan.
 // ====================================================================
 
-// Application Version
-prec_version             "{APP_VERSION}"
+// Engine Compatibility Aliases (Suppresses console warnings in TF2)
+alias prec_league              ""
+alias prec_mode                ""
+alias prec_dir                 ""
+alias prec_sound               ""
+alias prec_screens             ""
+alias prec_notify              ""
+alias prec_tag                 ""
+alias prec_demo_name           ""
+alias prec_min_streak          ""
+alias prec_kill_delay          ""
+alias prec_log                 ""
+alias prec_server_rcon_passwords ""
 
 // League Ruleset Profile: "etf2l", "rgl", "ozfortress", "matcha", "cltf2", "custom"
-// Or any custom profile defined in leagues/<id>.json
 prec_league              "{league}"
 
-// Recording Modes & Triggers
+// Recording Modes & Folders
 prec_mode                2      // 2 = Record active tournament matches only
 prec_dir                 "demos"// Subfolder in /tf/ for recorded demos
 prec_sound               1      // Audio cue on start/stop
-prec_hide_to_tray        1      // Hide console window to system tray (hidden pictograms)
-prec_desktop_shortcut    1      // 1 = Ensure desktop shortcut exists on Desktop
-prec_screens             1      // Screenshot of status & scoreboard at match end
+prec_screens             1      // Screenshot of status (after 3 mins) & scoreboard at match end
 prec_notify              1      // 1 = team chat start/stop announcement
 
-// Killstreaks & Demos
-prec_min_streak          3
-prec_kill_delay          15
-prec_log                 0
-prec_delete_useless_demo 0      // 0 = never delete (mandatory for league compliance)
-prec_stv_status          1
+// Demo Naming Pattern
 prec_tag                 ""
 prec_demo_name           "%date%_%time%_%map%_%red%_%blu%"
 
@@ -1656,18 +1670,16 @@ alias pr_message_start "say_team [P-REC] Recording started."
 alias pr_message_stop  "say_team [P-REC] Stop recording."
 alias pr_message_mark  "say_team [P-REC] Bookmark placed."
 
-// Connection Settings
-prec_connection_mode     "auto"
-prec_rcon_port           27969
-rcon_password            "{rcon_pw}"
-prec_rcon_password       "{rcon_pw}"
+// Killstreaks & Logs (Optional)
+prec_min_streak          3
+prec_kill_delay          15
+prec_log                 0
 
-// Server RCON & serveme.tf Synergy:
-// TF2 shares 'rcon_password' for both outgoing server commands and local listen RCON.
-// P-REC automatically synchronizes with active passwords and auto-heals when passwords switch.
+// Server RCON Synergy (Optional remote passwords for serveme.tf)
 prec_server_rcon_passwords ""
-prec_netcon_port         2121
-prec_tf_path             "{tf_path}"
+
+sv_rcon_whitelist_address "127.0.0.1"
+removeip 127.0.0.1
 """
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
