@@ -435,36 +435,76 @@ class PrecConfig:
 // Works seamlessly with mastercomfig, m0rehud, and DemoMan.
 // ====================================================================
 
+// --------------------------------------------------------------------
 // Engine Compatibility Aliases (Suppresses console warnings in TF2)
-alias prec_league              ""
-alias prec_mode                ""
-alias prec_dir                 ""
-alias prec_sound               ""
-alias prec_screens             ""
-alias prec_notify              ""
-alias prec_tag                 ""
-alias prec_demo_name           ""
-alias prec_min_streak          ""
-alias prec_kill_delay          ""
-alias prec_log                 ""
+// --------------------------------------------------------------------
+alias prec_league                ""
+alias prec_mode                  ""
+alias prec_dir                   ""
+alias prec_sound                 ""
+alias prec_screens               ""
+alias prec_notify                ""
+alias prec_tag                   ""
+alias prec_demo_name             ""
+alias prec_min_streak            ""
+alias prec_kill_delay            ""
+alias prec_log                   ""
 alias prec_server_rcon_passwords ""
 
-prec_league              "etf2l"
-prec_mode                2
-prec_dir                 "demos"
-prec_sound               1
-prec_screens             1
-prec_notify              1
-prec_tag                 ""
-prec_demo_name           "%date%_%time%_%map%_%red%_%blu%"
+// --------------------------------------------------------------------
+// 1. League Ruleset Profile
+// --------------------------------------------------------------------
+// Available Profiles:
+//   - "etf2l"        : European TF2 League (Strict Rule 2.1 compliance)
+//   - "rgl"          : RGL.gg North American League (Rule 1008.5 compliance)
+//   - "ozfortress"   : Oceanic TF2 League (Demo Checker compliance)
+//   - "asiafortress" : AsiaFortress Cup & League (af_ configs)
+//   - "matcha"       : Matcha.tf Asia/Pacific League
+//   - "cltf2"        : CustomLander TF2 (4v4, Ultiduo, Highlander)
+//   - "custom"       : Custom user triggers
+prec_league                "etf2l"
 
+// --------------------------------------------------------------------
+// 2. Recording Mode
+// --------------------------------------------------------------------
+// Modes:
+//   3 = Record ALL matches (every map, round, and server automatically)
+//   2 = Record tournament matches only (Auto-records when match goes LIVE - Default)
+//   1 = Manual recording only (records on custom triggers/manual start)
+//   0 = Disabled (turns off all demo recording)
+prec_mode                  2
+
+// --------------------------------------------------------------------
+// 3. Demo Storage & Alerts
+// --------------------------------------------------------------------
+prec_dir                   "demos"
+prec_sound                 1
+prec_screens               1
+prec_notify                1
+
+// --------------------------------------------------------------------
+// 4. Demo Naming Pattern
+// --------------------------------------------------------------------
+prec_tag                   ""
+prec_demo_name             "%date%_%time%_%map%_%red%_%blu%"
+
+// --------------------------------------------------------------------
+// 5. Team Chat Messages (Configurable)
+// --------------------------------------------------------------------
 alias pr_message_start "say_team [P-REC] Recording started."
 alias pr_message_stop  "say_team [P-REC] Stop recording."
 alias pr_message_mark  "say_team [P-REC] Bookmark placed."
 
-prec_min_streak          3
-prec_kill_delay          15
-prec_log                 0
+// --------------------------------------------------------------------
+// 6. Killstreaks & Bookmarks (Optional)
+// --------------------------------------------------------------------
+prec_min_streak            3
+prec_kill_delay            15
+prec_log                   0
+
+// --------------------------------------------------------------------
+// 7. Server RCON / serveme.tf Synergy (Optional)
+// --------------------------------------------------------------------
 prec_server_rcon_passwords ""
 
 sv_rcon_whitelist_address "127.0.0.1"
@@ -1637,45 +1677,76 @@ def write_wizard_config(path: Path, league: str, rcon_pw: str, tf_path: str):
 // Works seamlessly with mastercomfig, m0rehud, and DemoMan.
 // ====================================================================
 
+// --------------------------------------------------------------------
 // Engine Compatibility Aliases (Suppresses console warnings in TF2)
-alias prec_league              ""
-alias prec_mode                ""
-alias prec_dir                 ""
-alias prec_sound               ""
-alias prec_screens             ""
-alias prec_notify              ""
-alias prec_tag                 ""
-alias prec_demo_name           ""
-alias prec_min_streak          ""
-alias prec_kill_delay          ""
-alias prec_log                 ""
+// --------------------------------------------------------------------
+alias prec_league                ""
+alias prec_mode                  ""
+alias prec_dir                   ""
+alias prec_sound                 ""
+alias prec_screens               ""
+alias prec_notify                ""
+alias prec_tag                   ""
+alias prec_demo_name             ""
+alias prec_min_streak            ""
+alias prec_kill_delay            ""
+alias prec_log                   ""
 alias prec_server_rcon_passwords ""
 
-// League Ruleset Profile: "etf2l", "rgl", "ozfortress", "matcha", "cltf2", "custom"
-prec_league              "{league}"
+// --------------------------------------------------------------------
+// 1. League Ruleset Profile
+// --------------------------------------------------------------------
+// Available Profiles:
+//   - "etf2l"        : European TF2 League (Strict Rule 2.1 compliance)
+//   - "rgl"          : RGL.gg North American League (Rule 1008.5 compliance)
+//   - "ozfortress"   : Oceanic TF2 League (Demo Checker compliance)
+//   - "asiafortress" : AsiaFortress Cup & League (af_ configs)
+//   - "matcha"       : Matcha.tf Asia/Pacific League
+//   - "cltf2"        : CustomLander TF2 (4v4, Ultiduo, Highlander)
+//   - "custom"       : Custom user triggers
+prec_league                "{league}"
 
-// Recording Modes & Folders
-prec_mode                2      // 2 = Record active tournament matches only
-prec_dir                 "demos"// Subfolder in /tf/ for recorded demos
-prec_sound               1      // Audio cue on start/stop
-prec_screens             1      // Screenshot of status (after 3 mins) & scoreboard at match end
-prec_notify              1      // 1 = team chat start/stop announcement
+// --------------------------------------------------------------------
+// 2. Recording Mode
+// --------------------------------------------------------------------
+// Modes:
+//   3 = Record ALL matches (every map, round, and server automatically)
+//   2 = Record tournament matches only (Auto-records when match goes LIVE - Default)
+//   1 = Manual recording only (records on custom triggers/manual start)
+//   0 = Disabled (turns off all demo recording)
+prec_mode                  2
 
-// Demo Naming Pattern
-prec_tag                 ""
-prec_demo_name           "%date%_%time%_%map%_%red%_%blu%"
+// --------------------------------------------------------------------
+// 3. Demo Storage & Alerts
+// --------------------------------------------------------------------
+prec_dir                   "demos"
+prec_sound                 1
+prec_screens               1
+prec_notify                1
 
-// Chat Announcements
+// --------------------------------------------------------------------
+// 4. Demo Naming Pattern
+// --------------------------------------------------------------------
+prec_tag                   ""
+prec_demo_name             "%date%_%time%_%map%_%red%_%blu%"
+
+// --------------------------------------------------------------------
+// 5. Team Chat Messages (Configurable)
+// --------------------------------------------------------------------
 alias pr_message_start "say_team [P-REC] Recording started."
 alias pr_message_stop  "say_team [P-REC] Stop recording."
 alias pr_message_mark  "say_team [P-REC] Bookmark placed."
 
-// Killstreaks & Logs (Optional)
-prec_min_streak          3
-prec_kill_delay          15
-prec_log                 0
+// --------------------------------------------------------------------
+// 6. Killstreaks & Bookmarks (Optional)
+// --------------------------------------------------------------------
+prec_min_streak            3
+prec_kill_delay            15
+prec_log                   0
 
-// Server RCON Synergy (Optional remote passwords for serveme.tf)
+// --------------------------------------------------------------------
+// 7. Server RCON / serveme.tf Synergy (Optional)
+// --------------------------------------------------------------------
 prec_server_rcon_passwords ""
 
 sv_rcon_whitelist_address "127.0.0.1"
