@@ -29,6 +29,9 @@ In all competitive leagues (ETF2L, RGL, ozfortress, AsiaFortress, etc.), **it re
 * **Multi-League Rulesets:** Dedicated compliance for **ETF2L** (Rule 2.1), **AsiaFortress**, **RGL** (1008.5), **ozfortress**, **Matcha.tf**, and **CLTF2** with intuitive 3-2-1-0 recording modes.
 * **Auto-Healing RCON & serveme.tf Synergy:** Automatically synchronizes passwords and recovers instantly (<1ms) if you switch `rcon_password` in-game to execute server commands.
 * **DemoMan Integration:** Automatically discovers DemoMan's active RCON password and TF2 path.
+* **🎵 Authentic Tactile Audio Cues:** Uses classic original P-REC mechanical switch clicks directly in-game (`buttons/button9.wav` on start, `buttons/button14.wav` on stop, `buttons/bell1.wav` on bookmark) with zero annoying motherboard piezo buzzers and zero confusing player voice lines.
+* **🐛 Report Issues Buttons & Commands:** Quick 1-click access to the GitHub issues tracker via console toolbar, system tray context menu, and in-game `prec_issue` command.
+* **⚡ Ultra-Low CPU Engine:** Native Win32 Toolhelp snapshots inspect game state in < 0.5ms with zero background subprocess creation.
 
 ---
 

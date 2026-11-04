@@ -55,6 +55,8 @@ When running on Windows, P-REC External lives quietly in your system tray under 
   * **Start with Windows:** 1-click toggle to boot silently with Windows directly into your hidden system tray.
   * **Go to Settings (PREC_Settings.cfg):** Quick one-click configuration access.
   * **Open tf/custom/ Folder:** Instantly opens your TF2 mods folder in File Explorer.
+  * **Create Desktop Shortcut:** Instantly creates or repairs a Desktop shortcut pointing to the application.
+  * **Report Issue / Bug (GitHub)...:** Directly opens the GitHub Issues page in your browser.
   * **Uninstall P-REC External...:** Complete uninstaller with confirmation and option to keep or wipe settings files.
   * **Close P-REC External:** Stops recording cleanly, frees ports, and shuts down the background process.
 
