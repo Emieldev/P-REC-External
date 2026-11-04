@@ -45,7 +45,8 @@
 
 When running on Windows, P-REC External lives quietly in your system tray under the **Hidden Pictograms** (`^`) area with the **Supreme Soviet** icon (`assets/supreme_soviet.ico`):
 
-* **Left Double-Click:** Immediately opens [`PREC_Settings.cfg`](PREC_Settings.cfg) in your default text editor (Notepad, VS Code, etc.).
+* **Left Click / Double-Click:** Instantly toggles the console window (bringing it back from the hidden tray).
+* **Crossing out ('X'):** Minimizes the console window back to the hidden tray without terminating recording.
 * **Right-Click Context Menu:**
   * **Status Header:** Live connection and recording status (e.g. `P-REC External (Connected)`).
   * **Show / Hide Console Window:** Toggles terminal window visibility if you ever want to check live logs.

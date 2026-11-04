@@ -18,12 +18,14 @@
 * **0 FPS Impact / Zero Lag:** Runs 100% externally out-of-process. Touches 0 HUD animations and 0 VGUI panels.
 * **Zero Warmup Bloat:** Records strictly when the tournament countdown goes live.
 * **100% VAC-Safe:** Connects via official engine loopback sockets. Zero DLL injection or memory hooks.
-* **🛡️ Windows System Tray:** Lives quietly in Hidden Pictograms with the TF2 **Supreme Soviet** icon.
+* **🛡️ Windows System Tray & Close-to-Tray:** Lives quietly in Hidden Pictograms with the TF2 **Supreme Soviet** icon. Crossing out ('X') the console minimizes to tray without interrupting recording. Single or double-click the tray icon to instantly toggle the console back.
+* **📸 League Compliance Screenshots:** Takes mandatory in-game status screenshot randomly after 3 minutes of active tournament play (strict ETF2L Rule 2.1 compliance) plus scoreboard screenshot at match end.
+* **🔄 Mid-Match Reconnect & Substitute Detection:** Automatically detects ongoing matches if you crash, rejoin, or substitute into a tournament server mid-game, resuming recording immediately.
 * **🖥️ Desktop Shortcut & Startup:** Option to place a Desktop shortcut and auto-start silently on login.
 * **🔍 Live Connection Diagnostics:** Click "Check Connection" in the tray at any time to verify communication.
 * **Reassuring In-Game Console Messages:** Announces connection, active league, and recording start/stop in TF2 console (`~`).
 * **Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
-* **Multi-League Rulesets:** Dedicated compliance for **ETF2L** (Rule 2.1), **AsiaFortress**, **RGL** (1008.5), **ozfortress**, **Matcha.tf**, and **CLTF2**.
+* **Multi-League Rulesets:** Dedicated compliance for **ETF2L** (Rule 2.1), **AsiaFortress**, **RGL** (1008.5), **ozfortress**, **Matcha.tf**, and **CLTF2** with intuitive 3-2-1-0 recording modes.
 * **Auto-Healing RCON & serveme.tf Synergy:** Automatically synchronizes passwords and recovers instantly (<1ms) if you switch `rcon_password` in-game to execute server commands.
 * **DemoMan Integration:** Automatically discovers DemoMan's active RCON password and TF2 path.
 
