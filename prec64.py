@@ -27,6 +27,7 @@ Advantages:
 
 import os
 import sys
+import io
 import time
 import socket
 import struct
@@ -38,6 +39,22 @@ import secrets
 import subprocess
 import urllib.request
 from pathlib import Path
+
+# In PyInstaller windowed / GUI mode on Windows, standard streams are None
+if sys.stdin is None:
+    sys.stdin = io.StringIO()
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
+
+
+def is_interactive() -> bool:
+    """Safely checks if running in an interactive terminal with a valid stdin."""
+    try:
+        return bool(sys.stdin and hasattr(sys.stdin, "isatty") and sys.stdin.isatty())
+    except Exception:
+        return False
 
 if sys.platform == "win32":
     import ctypes
@@ -1167,7 +1184,7 @@ def show_manual_cfg_instructions(cfg_file: Path, cfg_filename="PREC_Settings.cfg
     print(get_recommended_snippet(cfg_filename).strip(), flush=True)
     print("-" * 65 + "\n", flush=True)
 
-    if sys.stdin.isatty():
+    if is_interactive():
         while True:
             confirm = input(f"Have you made and saved these changes to '{rel}' manually? [y/N]: ").strip().lower()
             if confirm == 'y':
@@ -1227,7 +1244,7 @@ def check_for_updates(interactive=True) -> dict:
     print(f"   Release Notes:   {html_url}", flush=True)
     print("=" * 65, flush=True)
 
-    if not interactive or not sys.stdin.isatty():
+    if not interactive or not is_interactive():
         return {
             "version": remote_tag,
             "name": release_name,
@@ -1303,7 +1320,7 @@ def check_for_updates(interactive=True) -> dict:
 
 def run_setup_wizard():
     # Check for latest releases before beginning setup
-    if sys.stdin.isatty():
+    if is_interactive():
         check_for_updates(interactive=True)
 
     print("\n" + "=" * 65, flush=True)
@@ -1335,7 +1352,7 @@ def run_setup_wizard():
         else:
             prompt = "  Enter full path to your /tf folder: "
 
-        if not sys.stdin.isatty():
+        if not is_interactive():
             tf_path = detected or Path("C:/Program Files (x86)/Steam/steamapps/common/Team Fortress 2/tf")
             break
 
@@ -1362,7 +1379,7 @@ def run_setup_wizard():
             print(f"  [{idx}] {c['desc']}", flush=True)
         print("-" * 65, flush=True)
         print("Note: PeachREC's HUD animation loops cause severe in-game microstutters.", flush=True)
-        if sys.stdin.isatty():
+        if is_interactive():
             do_clean = input("Would you like to automatically clean up these interfering files? [Y/n]: ").strip().lower()
         else:
             do_clean = "y"
@@ -1379,7 +1396,7 @@ def run_setup_wizard():
     app_install_dir = custom_dir / "P-REC"
     print(f"Target installation directory:\n -> {app_install_dir.resolve()}", flush=True)
 
-    if sys.stdin.isatty():
+    if is_interactive():
         confirm_custom = input("Install app and settings into this custom folder for easy file management? [Y/n]: ").strip().lower()
     else:
         confirm_custom = "y"
@@ -1431,7 +1448,7 @@ def run_setup_wizard():
             l_info = discovered_leagues[l_key]
             print(f"  [{idx}] {l_info.get('name', l_key.upper())} ({l_key})", flush=True)
 
-        if sys.stdin.isatty():
+        if is_interactive():
             choice = input(f"Enter choice [1-{len(league_keys)}, default 1]: ").strip()
             try:
                 choice_idx = int(choice) - 1
@@ -1447,14 +1464,14 @@ def run_setup_wizard():
         if demoman.get("rcon_password"):
             d_pw = demoman["rcon_password"]
             print(f"[DEMOMAN] Automatically detected DemoMan RCON password: '{d_pw}'", flush=True)
-            if sys.stdin.isatty():
+            if is_interactive():
                 use_demo = input(f"Adopt DemoMan's password ({d_pw})? [Y/n]: ").strip().lower()
                 if use_demo != 'n':
                     rcon_pw = d_pw
             else:
                 rcon_pw = d_pw
 
-        if not rcon_pw and sys.stdin.isatty():
+        if not rcon_pw and is_interactive():
             has_rcon = input("Do you already have an existing RCON password? [y/N]: ").strip().lower()
             if has_rcon == 'y':
                 rcon_pw = input("Enter your existing RCON password: ").strip()
@@ -1520,7 +1537,7 @@ def run_setup_wizard():
         print("It will NOT touch game_overrides.cfg or create duplicate configs.\n", flush=True)
         print("Proposed addition:\n" + get_recommended_snippet(cfg_target.name), flush=True)
 
-        if sys.stdin.isatty():
+        if is_interactive():
             ans = input(f"Add optimal P-REC settings to {rel_auto}? [Y/n]: ").strip().lower()
         else:
             ans = "n" if target_autoexec.exists() else "y"
@@ -1538,7 +1555,7 @@ def run_setup_wizard():
     else:
         run_exe = target_dir / "prec64"
 
-    if sys.stdin.isatty():
+    if is_interactive():
         print("=" * 65, flush=True)
         print(" [SYSTEM STARTUP]", flush=True)
         print("=" * 65, flush=True)
@@ -1558,7 +1575,7 @@ def run_setup_wizard():
     print(" [DESKTOP SHORTCUT]", flush=True)
     print("=" * 65, flush=True)
     print("P-REC External can place a shortcut on your Desktop for easy access.", flush=True)
-    if sys.stdin.isatty():
+    if is_interactive():
         ans = input("Create a desktop shortcut for P-REC External? [Y/n]: ").strip().lower()
         make_shortcut = ans not in ("n", "no")
     else:
@@ -1593,7 +1610,7 @@ def run_setup_wizard():
     print("its status directly into your TF2 in-game developer console (~).", flush=True)
     print("=" * 65, flush=True)
 
-    if sys.stdin.isatty():
+    if is_interactive():
         input("\nPress Enter to continue launching P-REC...")
     return cfg_target
 
@@ -3352,7 +3369,7 @@ if __name__ == "__main__":
 
     force_wizard = "--install" in sys.argv or "--setup" in sys.argv
 
-    if sys.stdin.isatty() and not force_wizard and not any(arg in sys.argv for arg in ("--no-update", "--daemon")):
+    if is_interactive() and not force_wizard and not any(arg in sys.argv for arg in ("--no-update", "--daemon")):
         check_for_updates(interactive=True)
 
     if force_wizard:
