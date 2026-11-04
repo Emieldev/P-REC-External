@@ -465,6 +465,10 @@ alias prec_sound_mark            ""
 alias prec_screens               ""
 alias prec_status                ""
 alias prec_screenshot            ""
+alias prec_issue                 ""
+alias prec_issues                ""
+alias prec_report                ""
+alias prec_bug                   ""
 alias prec_notify                ""
 alias prec_tag                   ""
 alias prec_demo_name             ""
@@ -1445,6 +1449,20 @@ def check_for_updates(interactive=True) -> dict:
     return {"version": remote_tag, "url": html_url}
 
 
+def open_github_issues():
+    """Opens the project GitHub issues tracker in the default web browser."""
+    url = f"https://github.com/{GITHUB_REPO}/issues"
+    print(f"\n[{APP_NAME}] Opening GitHub Issues tracker: {url}", flush=True)
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception:
+        try:
+            os.startfile(url)
+        except Exception as e:
+            print(f"[ERROR] Could not open browser: {e}", flush=True)
+
+
 # ====================================================================
 # Interactive First-Time Installation Wizard
 # ====================================================================
@@ -1780,6 +1798,10 @@ alias prec_sound_mark            ""
 alias prec_screens               ""
 alias prec_status                ""
 alias prec_screenshot            ""
+alias prec_issue                 ""
+alias prec_issues                ""
+alias prec_report                ""
+alias prec_bug                   ""
 alias prec_notify                ""
 alias prec_tag                   ""
 alias prec_demo_name             ""
@@ -2475,13 +2497,27 @@ class NativeConsoleWindow:
                         except Exception:
                             pass
                     return 0
+                elif msg == 0x0111:  # WM_COMMAND
+                    cmd_id = int(wp) & 0xFFFF
+                    if cmd_id == 2001:
+                        threading.Thread(target=open_github_issues, daemon=True).start()
+                    elif cmd_id == 2002:
+                        target = find_existing_config()
+                        if target and target.exists():
+                            try:
+                                os.startfile(str(target.resolve()))
+                            except Exception:
+                                pass
+                    elif cmd_id == 2003:
+                        user32.SetWindowTextW(self.edit_hwnd, "")
+                    return 0
                 elif msg == 0x0005:  # WM_SIZE
                     w = lp & 0xFFFF
                     h = (lp >> 16) & 0xFFFF
                     if self.edit_hwnd:
-                        user32.MoveWindow(self.edit_hwnd, 0, 0, w, h, True)
+                        user32.MoveWindow(self.edit_hwnd, 0, 38, w, max(0, h - 38), True)
                     return 0
-                elif msg == 0x0138:  # WM_CTLCOLORSTATIC (dark theme)
+                elif msg in (0x0138, 0x0135):  # WM_CTLCOLORSTATIC, WM_CTLCOLORBTN (dark theme)
                     hdc = wintypes.HDC(wp)
                     gdi32.SetTextColor(hdc, 0x00E0E0E0)
                     gdi32.SetBkColor(hdc, 0x00121212)
@@ -2541,10 +2577,32 @@ class NativeConsoleWindow:
                 None, None, h_inst, None
             )
 
+            btn_style = 0x40000000 | 0x10000000 | 0x0000  # WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON
+            self.btn_issue_hwnd = user32.CreateWindowExW(
+                0, "BUTTON", "Report Issue (GitHub)",
+                btn_style, 8, 6, 170, 26,
+                self.hwnd, ctypes.cast(2001, wintypes.HMENU), h_inst, None
+            )
+            self.btn_settings_hwnd = user32.CreateWindowExW(
+                0, "BUTTON", "Settings (PREC_Settings.cfg)",
+                btn_style, 186, 6, 195, 26,
+                self.hwnd, ctypes.cast(2002, wintypes.HMENU), h_inst, None
+            )
+            self.btn_clear_hwnd = user32.CreateWindowExW(
+                0, "BUTTON", "Clear Logs",
+                btn_style, 389, 6, 100, 26,
+                self.hwnd, ctypes.cast(2003, wintypes.HMENU), h_inst, None
+            )
+
+            h_btn_font = gdi32.CreateFontW(14, 0, 0, 0, 600, False, False, False, 1, 0, 0, 2, 0, "Segoe UI")
+            user32.SendMessageW(self.btn_issue_hwnd, 0x0030, h_btn_font, None)
+            user32.SendMessageW(self.btn_settings_hwnd, 0x0030, h_btn_font, None)
+            user32.SendMessageW(self.btn_clear_hwnd, 0x0030, h_btn_font, None)
+
             edit_style = 0x40000000 | 0x10000000 | 0x00200000 | 0x0004 | 0x0040 | 0x0800
             self.edit_hwnd = user32.CreateWindowExW(
                 0, "EDIT", "",
-                edit_style, 0, 0, 784, 481,
+                edit_style, 0, 38, 784, 443,
                 self.hwnd, None, h_inst, None
             )
 
@@ -2774,8 +2832,9 @@ class WindowsSystemTray:
             ID_CUSTOM_DIR = 1006
             ID_UPDATE = 1007
             ID_SHORTCUT = 1008
-            ID_UNINSTALL = 1009
-            ID_EXIT = 1010
+            ID_REPORT_ISSUE = 1009
+            ID_UNINSTALL = 1010
+            ID_EXIT = 1011
 
             class NOTIFYICONDATAW(ctypes.Structure):
                 _fields_ = [
@@ -2842,6 +2901,7 @@ class WindowsSystemTray:
                 user32.AppendMenuW(h_menu, MF_STRING, ID_CUSTOM_DIR, "Open tf/custom/ Folder")
                 user32.AppendMenuW(h_menu, MF_STRING, ID_SHORTCUT, "Create Desktop Shortcut")
                 user32.AppendMenuW(h_menu, MF_SEPARATOR, 0, None)
+                user32.AppendMenuW(h_menu, MF_STRING, ID_REPORT_ISSUE, "Report Issue / Bug (GitHub)...")
                 user32.AppendMenuW(h_menu, MF_STRING, ID_UNINSTALL, "Uninstall P-REC External...")
                 user32.AppendMenuW(h_menu, MF_STRING, ID_EXIT, f"Close {APP_NAME}")
 
@@ -2880,6 +2940,8 @@ class WindowsSystemTray:
                         self.open_custom_folder()
                     elif cmd_id == ID_SHORTCUT:
                         create_desktop_shortcut()
+                    elif cmd_id == ID_REPORT_ISSUE:
+                        threading.Thread(target=open_github_issues, daemon=True).start()
                     elif cmd_id == ID_UNINSTALL:
                         if getattr(self, "on_uninstall_callback", None):
                             threading.Thread(target=self.on_uninstall_callback, daemon=True).start()
@@ -3762,6 +3824,11 @@ class PrecEngine:
         # Manual status screenshot trigger (e.g. prec_status, prec_screenshot, ds_status)
         if re.search(r'^\s*(?:prec_status|prec_screenshot|ds_status)\b', line.strip(), re.I):
             self.capture_status_screenshot("Manual In-Game Trigger")
+
+        # Report Issue trigger from in-game console (e.g. prec_issue, prec_issues, prec_report, prec_bug)
+        if re.search(r'^\s*(?:prec_issue|prec_issues|prec_report|prec_bug)\b', line.strip(), re.I):
+            self.send_cmd(f'echo "[P-REC External] Opening GitHub Issues in browser: https://github.com/{GITHUB_REPO}/issues"')
+            threading.Thread(target=open_github_issues, daemon=True).start()
 
         # Dynamic In-Game Cvar / Setting Execution (e.g. prec_mode 3, prec_dir matches, ds_dir ...)
         cvar_match = re.search(r'^\s*(prec_[a-zA-Z0-9_]+|ds_[a-zA-Z0-9_]+)\s+["\']?([^"\'\n\r]+)["\']?', line.strip(), re.I)

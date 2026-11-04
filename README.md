@@ -271,9 +271,9 @@ All league rules are stored as independent JSON files in the [`leagues/`](league
 
 ---
 
-## 🤝 Contributing & Pull Requests Welcome!
+## 🤝 Contributing & Reporting Issues
 
-**Community contributions and Pull Requests are strongly encouraged!**
+* **Found a bug or have a suggestion?** Click **"Report Issue (GitHub)"** in the console window toolbar, right-click the system tray icon and select **"Report Issue / Bug (GitHub)..."**, or type `prec_issue` in your TF2 console to open the [GitHub Issues Tracker](https://github.com/Emieldev/P-REC-External/issues).
 * **League Admins:** Submit PRs adding or updating your league's JSON profile in `leagues/`.
 * **Developers:** Feel free to open PRs for bug fixes, Linux packaging improvements, or feature enhancements.
 * **HUD Authors & Players:** Report edge cases, chat trigger formats, or feedback via GitHub Issues.
