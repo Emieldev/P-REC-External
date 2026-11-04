@@ -1969,6 +1969,21 @@ class ConsoleRedirector:
             except Exception:
                 pass
 
+    def isatty(self):
+        return False
+
+    def fileno(self):
+        raise io.UnsupportedOperation("fileno not supported on ConsoleRedirector")
+
+    def readable(self):
+        return False
+
+    def writable(self):
+        return True
+
+    def seekable(self):
+        return False
+
 
 class NativeConsoleWindow:
     """
@@ -2002,7 +2017,7 @@ class NativeConsoleWindow:
     def show(self):
         if sys.platform != "win32" or not self.hwnd:
             return
-        ctypes.windll.user32.ShowWindow(self.hwnd, 5)  # SW_SHOW
+        ctypes.windll.user32.ShowWindow(self.hwnd, 9)  # SW_RESTORE
         ctypes.windll.user32.SetForegroundWindow(self.hwnd)
         self.visible = True
 
@@ -2054,6 +2069,16 @@ class NativeConsoleWindow:
             user32.DefWindowProcW.restype = LRESULT
             user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, ctypes.c_void_p]
             user32.SendMessageW.restype = LRESULT
+            user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+            user32.LoadImageW.restype = wintypes.HANDLE
+            user32.LoadIconW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR]
+            user32.LoadIconW.restype = wintypes.HICON
+            user32.CreateWindowExW.argtypes = [
+                wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR,
+                wintypes.DWORD, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID
+            ]
+            user32.CreateWindowExW.restype = wintypes.HWND
 
             class_name = f"PREC_NativeConsole_{os.getpid()}"
             h_inst = kernel32.GetModuleHandleW(None)
@@ -2102,11 +2127,32 @@ class NativeConsoleWindow:
                     ("hIconSm", wintypes.HICON),
                 ]
 
+            h_icon = None
+            try:
+                h_icon = user32.LoadIconW(h_inst, ctypes.cast(1, wintypes.LPCWSTR))
+            except Exception:
+                h_icon = None
+            if not h_icon:
+                ico_file = get_icon_path("supreme_soviet.ico")
+                if ico_file and Path(ico_file).exists():
+                    try:
+                        h_icon = user32.LoadImageW(None, str(ico_file), 1, 0, 0, 0x00000010 | 0x00000040)
+                    except Exception:
+                        h_icon = None
+            if not h_icon:
+                try:
+                    h_icon = user32.LoadIconW(None, ctypes.cast(32512, wintypes.LPCWSTR))
+                except Exception:
+                    h_icon = None
+
             wc = WNDCLASSEXW()
             wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+            wc.style = 0x0008  # CS_DBLCLKS
             wc.lpfnWndProc = self._wnd_proc
             wc.hInstance = h_inst
             wc.lpszClassName = class_name
+            wc.hIcon = h_icon
+            wc.hIconSm = h_icon
             wc.hbrBackground = gdi32.GetStockObject(4)
             user32.RegisterClassExW(ctypes.byref(wc))
 
@@ -2126,13 +2172,10 @@ class NativeConsoleWindow:
             h_font = gdi32.CreateFontW(16, 0, 0, 0, 400, False, False, False, 1, 0, 0, 2, 0, "Consolas")
             user32.SendMessageW(self.edit_hwnd, 0x0030, h_font, None)
 
-            ico_file = get_icon_path("supreme_soviet.ico")
-            if ico_file and Path(ico_file).exists():
+            if h_icon:
                 try:
-                    h_icon = user32.LoadImageW(None, str(ico_file), 1, 32, 32, 0x00000010)
-                    if h_icon:
-                        user32.SendMessageW(self.hwnd, 0x0080, 1, ctypes.c_void_p(h_icon))
-                        user32.SendMessageW(self.hwnd, 0x0080, 0, ctypes.c_void_p(h_icon))
+                    user32.SendMessageW(self.hwnd, 0x0080, 1, ctypes.c_void_p(h_icon))
+                    user32.SendMessageW(self.hwnd, 0x0080, 0, ctypes.c_void_p(h_icon))
                 except Exception:
                     pass
 
@@ -2259,15 +2302,14 @@ class WindowsSystemTray:
             return
         if getattr(self, "native_console", None):
             self.native_console.show()
-        else:
-            try:
-                import ctypes
-                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-                if hwnd:
-                    ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
-                    ctypes.windll.user32.SetForegroundWindow(hwnd)
-            except Exception:
-                pass
+        try:
+            import ctypes
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
         self.console_visible = True
 
     def toggle_console(self):
@@ -2303,11 +2345,22 @@ class WindowsSystemTray:
             LRESULT = ctypes.c_longlong
             user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
             user32.DefWindowProcW.restype = LRESULT
+            user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+            user32.LoadImageW.restype = wintypes.HANDLE
+            user32.LoadIconW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR]
+            user32.LoadIconW.restype = wintypes.HICON
+            user32.CreateWindowExW.argtypes = [
+                wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR,
+                wintypes.DWORD, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID
+            ]
+            user32.CreateWindowExW.restype = wintypes.HWND
 
             WM_USER = 0x0400
             WM_TRAY = WM_USER + 20
-            WM_RBUTTONUP = 0x0205
+            WM_LBUTTONUP = 0x0202
             WM_LBUTTONDBLCLK = 0x0203
+            WM_RBUTTONUP = 0x0205
             WM_COMMAND = 0x0111
             WM_DESTROY = 0x0002
             WM_CLOSE = 0x0010
@@ -2421,7 +2474,7 @@ class WindowsSystemTray:
                 if msg == WM_TRAY:
                     if lparam == WM_RBUTTONUP:
                         show_menu()
-                    elif lparam == WM_LBUTTONDBLCLK:
+                    elif lparam in (WM_LBUTTONUP, WM_LBUTTONDBLCLK):
                         self.toggle_console()
                     return 0
                 elif msg == WM_COMMAND:
@@ -2465,11 +2518,32 @@ class WindowsSystemTray:
 
             self._wnd_proc = WNDPROC(wnd_proc)
 
+            h_icon = None
+            try:
+                h_icon = user32.LoadIconW(h_inst, ctypes.cast(1, wintypes.LPCWSTR))
+            except Exception:
+                h_icon = None
+            if not h_icon:
+                ico_file = get_icon_path("supreme_soviet.ico")
+                if ico_file and Path(ico_file).exists():
+                    try:
+                        h_icon = user32.LoadImageW(None, str(ico_file), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE)
+                    except Exception:
+                        h_icon = None
+            if not h_icon:
+                try:
+                    h_icon = user32.LoadIconW(None, ctypes.cast(32512, wintypes.LPCWSTR))
+                except Exception:
+                    h_icon = None
+
             wc = WNDCLASSEXW()
             wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+            wc.style = 0x0008  # CS_DBLCLKS
             wc.lpfnWndProc = self._wnd_proc
             wc.hInstance = h_inst
             wc.lpszClassName = class_name
+            wc.hIcon = h_icon
+            wc.hIconSm = h_icon
             user32.RegisterClassExW(ctypes.byref(wc))
 
             self.hwnd = user32.CreateWindowExW(
@@ -2477,13 +2551,6 @@ class WindowsSystemTray:
                 0, 0, 0, 0, 0,
                 None, None, h_inst, None
             )
-
-            ico_file = get_icon_path("supreme_soviet.ico")
-            h_icon = None
-            if ico_file:
-                h_icon = user32.LoadImageW(None, str(ico_file), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE)
-            if not h_icon:
-                h_icon = user32.LoadIconW(None, 32512)
 
             self.nid = NOTIFYICONDATAW()
             self.nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
@@ -2548,9 +2615,9 @@ class PrecEngine:
         self.tray.on_check_conn_callback = self.check_connection
         self.tray.start()
 
-        # Hide console to system tray (hidden pictograms) if configured
+        # Show console window on startup unless explicitly launched silently via --tray or --minimized
         if sys.platform == "win32":
-            if getattr(self.cfg, "prec_hide_to_tray", 1) and not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
+            if any(arg in sys.argv for arg in ("--tray", "--minimized", "--silent", "--daemon")):
                 self.tray.hide_console()
             else:
                 self.tray.show_console()
@@ -3352,7 +3419,7 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         try:
             h_con = ctypes.windll.kernel32.GetConsoleWindow()
-            if h_con and not any(arg in sys.argv for arg in ("--console", "--debug", "--install", "--setup")):
+            if h_con and any(arg in sys.argv for arg in ("--tray", "--minimized", "--silent", "--daemon")):
                 ctypes.windll.user32.ShowWindow(h_con, 0)  # SW_HIDE
         except Exception:
             pass
