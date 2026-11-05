@@ -3188,7 +3188,7 @@ class PrecEngine:
 
             if hasattr(self, "tray") and self.tray:
                 self.tray.update_status(f"Connected ({mode_upper} • {prof_name}) - OK")
-            self.play_sound(is_start=True)
+            self.play_sound("start")
             print("[RESULT] In-game confirmation sent to TF2 developer console (~).", flush=True)
             print("[RESULT] Connection is fully operational!\n", flush=True)
         else:
@@ -3596,13 +3596,14 @@ class PrecEngine:
         self.send_cmd(f'echo "[P-REC External] League profile active: {prof_name} [{mode_label}]"')
         self.send_cmd(f'echo "[P-REC External] Target demo directory: tf/{self.cfg.prec_dir}/ | Prefix: {prefix}"')
 
-    def play_sound(self, event="start"):
+    def play_sound(self, event="start", is_start=None, **kwargs):
         """
         Plays short, chill notification audio cues directly into TF2's game audio mixer via Source engine `play`.
         Uses crisp, dedicated tactile UI sounds (classic P-REC button9 / button14) that cannot be mistaken for
         player voice lines, and completely eliminates annoying motherboard/piezo beeps.
 
         event: "start", "stop", or "mark" (also accepts boolean True/False: True=start, False=stop)
+        is_start: backward-compatibility flag (True=start, False=stop)
 
         Modes (self.cfg.prec_sound):
           1 = Short, chill in-game tactile UI cues (Default: classic P-REC buttons/button9.wav on start, buttons/button14.wav on stop)
@@ -3613,47 +3614,52 @@ class PrecEngine:
           prec_sound_stop "buttons/button14.wav"
           prec_sound_mark "buttons/bell1.wav"
         """
-        if isinstance(event, bool):
-            event = "start" if event else "stop"
-        event = str(event).lower()
+        try:
+            if is_start is not None:
+                event = "start" if is_start else "stop"
+            elif isinstance(event, bool):
+                event = "start" if event else "stop"
+            event = str(event).lower()
 
-        if not self.cfg.prec_sound:
-            return
+            if not self.cfg.prec_sound:
+                return
 
-        # Short, crisp tactile UI sound cues (never mercenary voice lines)
-        if event == "start":
-            sound_to_play = getattr(self.cfg, "prec_sound_start", "buttons/button9.wav") or "buttons/button9.wav"
-        elif event == "stop":
-            sound_to_play = getattr(self.cfg, "prec_sound_stop", "buttons/button14.wav") or "buttons/button14.wav"
-        elif event == "mark":
-            sound_to_play = getattr(self.cfg, "prec_sound_mark", "buttons/bell1.wav") or "buttons/bell1.wav"
-        else:
-            sound_to_play = "buttons/button9.wav"
+            # Short, crisp tactile UI sound cues (never mercenary voice lines)
+            if event == "start":
+                sound_to_play = getattr(self.cfg, "prec_sound_start", "buttons/button9.wav") or "buttons/button9.wav"
+            elif event == "stop":
+                sound_to_play = getattr(self.cfg, "prec_sound_stop", "buttons/button14.wav") or "buttons/button14.wav"
+            elif event == "mark":
+                sound_to_play = getattr(self.cfg, "prec_sound_mark", "buttons/bell1.wav") or "buttons/bell1.wav"
+            else:
+                sound_to_play = "buttons/button9.wav"
 
-        # 1. Primary delivery: Route through TF2's Source audio mixer via console command
-        played_in_game = False
-        if sound_to_play and self.sender:
-            try:
-                self.send_cmd(f'play "{sound_to_play}"')
-                played_in_game = True
-            except Exception:
-                played_in_game = False
+            # 1. Primary delivery: Route through TF2's Source audio mixer via console command
+            played_in_game = False
+            if sound_to_play and self.sender:
+                try:
+                    self.send_cmd(f'play "{sound_to_play}"')
+                    played_in_game = True
+                except Exception:
+                    played_in_game = False
 
-        # 2. Gentle Windows system chime fallback (ONLY if TF2 is not connected / off)
-        if not played_in_game:
-            try:
-                if sys.platform == "win32":
-                    import winsound
-                    winsound.MessageBeep(winsound.MB_ICONASTERISK)
-                else:
-                    try:
-                        sound_name = "bell" if event == "start" else "dialog-warning"
-                        subprocess.run(["paplay", f"/usr/share/sounds/freedesktop/stereo/{sound_name}.oga"],
-                                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            # 2. Gentle Windows system chime fallback (ONLY if TF2 is not connected / off)
+            if not played_in_game:
+                try:
+                    if sys.platform == "win32":
+                        import winsound
+                        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+                    else:
+                        try:
+                            sound_name = "bell" if event == "start" else "dialog-warning"
+                            subprocess.run(["paplay", f"/usr/share/sounds/freedesktop/stereo/{sound_name}.oga"],
+                                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def capture_status_screenshot(self, trigger_type="Mid-Game (3+ mins)"):
         """
@@ -3792,7 +3798,7 @@ class PrecEngine:
                 msg = msg.replace("[P-REC]", "[P-REC Scrim]")
             self.send_cmd(msg)
 
-        self.play_sound(is_start=True)
+        self.play_sound("start")
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status(f"Recording ({self.current_demo_name})")
 
@@ -3850,7 +3856,7 @@ class PrecEngine:
                 msg = msg.replace("[P-REC]", "[P-REC Scrim]")
             self.send_cmd(msg)
 
-        self.play_sound(is_start=False)
+        self.play_sound("stop")
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status("Connected to TF2")
 
@@ -3886,6 +3892,13 @@ class PrecEngine:
     def process_console_line(self, line):
         if not line:
             return
+        try:
+            self._process_console_line_inner(line)
+        except Exception as e:
+            # Under no circumstances should an unexpected exception in console parsing interrupt RCON/Netcon
+            print(f"[{APP_NAME} DEBUG] Console parser error on line '{line[:60]}': {e}", flush=True)
+
+    def _process_console_line_inner(self, line):
 
         # Manual status screenshot trigger (e.g. prec_status, prec_screenshot, ds_status)
         if re.search(r'^\s*(?:prec_status|prec_screenshot|ds_status)\b', line.strip(), re.I):
