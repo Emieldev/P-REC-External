@@ -3191,6 +3191,8 @@ class PrecEngine:
         self.is_recording = False
         self.is_tournament = False
         self.is_scrim = False
+        self.is_official_match = False
+        self.is_in_warmup = False
         self.last_record_start = 0.0
         self.last_record_stop = 0.0
         self.last_connected_server = ""
@@ -3844,13 +3846,14 @@ class PrecEngine:
         self.status_screenshot_timer.daemon = True
         self.status_screenshot_timer.start()
 
-    def start_recording(self, reason="Match Live", is_resume=False):
+    def start_recording(self, reason="Match Live", is_resume=False, is_official=True):
         now = time.time()
         if self.is_recording or (now - self.last_record_start < 1.5):
             return
 
         self.last_record_start = now
         self.is_recording = True
+        self.is_official_match = is_official
         self.was_in_match = True
         if not self.match_start_time:
             self.match_start_time = now
@@ -3921,6 +3924,7 @@ class PrecEngine:
 
         self.last_record_stop = now
         self.is_recording = False
+        self.is_official_match = False
         demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
 
         # 1. P-REC Console Notification
@@ -3995,12 +3999,38 @@ class PrecEngine:
             print(f"[{APP_NAME} ERROR] Failed to send command '{cmd}': {e}", flush=True)
 
     def _restart_recording_for_match(self, reason):
-        """Asynchronously stops warmup demo and begins official match demo without blocking console reader."""
+        """Asynchronously transitions from warmup demo to official match demo without interrupting active matches."""
+        # If an official match demo is already actively recording, do not interrupt or split the recording!
+        if self.is_recording and self.is_official_match:
+            return
+
         def _worker():
-            self.stop_recording("Warmup Ended / Match Live")
-            time.sleep(0.12)
-            self.start_recording(reason)
+            if self.is_recording:
+                self.stop_recording("Warmup Ended / Match Live")
+                time.sleep(0.12)
+            self.start_recording(reason, is_official=True)
         threading.Thread(target=_worker, daemon=True).start()
+
+    @staticmethod
+    def is_player_chat(line: str) -> bool:
+        """
+        Determines if a console line originates from player text chat rather than server/game output.
+        Standard Source engine player chat lines have two spaces after the colon following the player name.
+        Examples:
+          "Player :  hello"
+          "*DEAD* Player :  both teams are ready"
+          "(TEAM) Player :  the match will begin in 10 seconds"
+          "(TEAM) *DEAD* Player :  match is live"
+          "(Spectator) Player :  gl hf"
+          "*SPEC* Player :  gg"
+        """
+        if not line:
+            return False
+        if re.search(r'^(?:\([^\)]+\)\s*)?(?:\*(?:DEAD|SPEC)\*\s*)?[^:]{1,64}?\s*:\s\s', line):
+            return True
+        if re.search(r'^\((?:TEAM|Spectator|Coach)\)\s*[^:]{1,64}?\s*:\s', line, re.I):
+            return True
+        return False
 
     def process_console_line(self, line):
         if not line:
@@ -4043,6 +4073,10 @@ class PrecEngine:
             if self.cfg.prec_notify >= 1 and self.cfg.pr_message_mark:
                 self.send_cmd(self.cfg.pr_message_mark)
             self.play_sound("mark")
+
+        # Ignore player text chat from triggering match state changes, configs, or recording commands
+        if self.is_player_chat(line):
+            return
 
         map_match = re.search(r"(?:Map:\s+|map\s*:\s+)([a-zA-Z0-9_]+)", line, re.I)
         if map_match:
@@ -4146,36 +4180,39 @@ class PrecEngine:
         for trigger in self.active_profile.get("chat_triggers", []):
             if re.search(trigger, line, re.I):
                 self.is_tournament = True
-                self.start_recording(f"{self.active_profile.get('name', 'League')} Trigger: {trigger}")
+                self.is_in_warmup = False
+                if not self.is_recording:
+                    self.start_recording(f"{self.active_profile.get('name', 'League')} Trigger: {trigger}", is_official=True)
+                elif not self.is_official_match:
+                    self._restart_recording_for_match(f"{self.active_profile.get('name', 'League')} Trigger: {trigger}")
                 return
 
-        # 2. General Tournament Live Events
+        # 3. General Tournament Live Events
         if re.search(r"The match will begin in \d+ seconds", line, re.I):
             self.is_tournament = True
-            if self.is_recording:
-                self.send_cmd("ds_stop; ds_record")
-                self.send_cmd('echo "[P-REC External] Tournament countdown begun — restarted demo for official match!"')
-            else:
-                self.start_recording("Tournament Countdown Started")
+            self.is_in_warmup = False
+            if not self.is_recording:
+                self.start_recording("Tournament Countdown Started", is_official=True)
+            elif not self.is_official_match:
+                self._restart_recording_for_match("Tournament Countdown Started")
             return
 
         if re.search(r"Tournament mode restarted", line, re.I) or "mp_tournament_restart" in line:
             self.is_tournament = True
+            self.is_in_warmup = True
+            self.was_in_match = False
             if self.is_recording:
-                self.send_cmd("ds_stop; ds_record")
-                self.send_cmd('echo "[P-REC External] Tournament mode restarted — restarted demo for official match!"')
-            else:
-                self.start_recording("Tournament Mode Restarted (Live)")
+                self.stop_recording("Tournament Mode Restarted (Match / Half Ended)")
             return
 
         # SOAP DM & ProperPregame (Universal Match Live Indicators on serveme.tf & competitive servers)
         if re.search(r"\[SOAP\]\s+(?:Soap DM|Plugins)\s+unloaded", line, re.I) or "[ProperPregame] Class limits restored" in line:
             self.is_tournament = True
-            if self.is_recording:
-                # If already recording during warmup, restart demo cleanly for official match
+            self.is_in_warmup = False
+            if not self.is_recording:
+                self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)", is_official=True)
+            elif not self.is_official_match:
                 self._restart_recording_for_match("Soap DM Unloaded (Official Match Live)")
-            else:
-                self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)")
             return
 
         # Whitelist enforcement message: confirms tournament mode active on server (does NOT mean match is live)
@@ -4185,31 +4222,34 @@ class PrecEngine:
 
         # SOAP DM active deathmatch messages: indicates pregame warmup is actively underway
         if re.search(r"\[SOAP\]\s+(?:Your attacker had|Spawned in|Killstreak|Healing done)", line, re.I):
-            if self.is_recording and self.cfg.prec_mode == 2:
+            self.is_in_warmup = True
+            if self.is_recording and not self.is_official_match and self.cfg.prec_mode == 2:
                 self.stop_recording("Warmup Active (SOAP DM running)")
             self.was_in_match = False
 
         if "[SOAP] Match is starting" in line or "[SOAP] Match begins" in line:
             self.is_tournament = True
-            if self.is_recording:
+            self.is_in_warmup = False
+            if not self.is_recording:
+                self.start_recording("SOAP DM Match Live", is_official=True)
+            elif not self.is_official_match:
                 self._restart_recording_for_match("SOAP DM Match Live")
-            else:
-                self.start_recording("SOAP DM Match Live")
             return
 
-        if re.search(r"(Both teams are ready|Match is LIVE|All players are ready)", line, re.I):
+        if re.search(r"(?:^|\*\*\*\s*)Match is LIVE", line, re.I) or re.search(r"\bBoth teams are ready\b", line, re.I) or re.search(r"\bAll players are ready\b", line, re.I):
             self.is_tournament = True
-            if self.is_recording:
+            self.is_in_warmup = False
+            if not self.is_recording:
+                self.start_recording("Competitive League Match Live", is_official=True)
+            elif not self.is_official_match:
                 self._restart_recording_for_match("Competitive League Match Live")
-            else:
-                self.start_recording("Competitive League Match Live")
             return
 
         if 'World triggered "Round_Start"' in line:
             if self.cfg.prec_mode == 3 and not self.is_recording:
-                self.start_recording("Round Start (Mode 3)")
-            elif self.was_in_match and not self.is_recording:
-                self.start_recording("Round Start (Match Continued)", is_resume=True)
+                self.start_recording("Round Start (Mode 3)", is_official=False)
+            elif not self.is_in_warmup and self.cfg.prec_mode >= 2 and not self.is_recording and (self.was_in_match or self.is_tournament):
+                self.start_recording("Round Start (Tournament Match Active)", is_resume=self.was_in_match, is_official=True)
             return
 
         # Player spawn or connection established -> inspect server tournament state
@@ -4221,17 +4261,31 @@ class PrecEngine:
             if self.is_recording:
                 self.stop_recording("Connection Retry")
             self.is_tournament = False
+            self.is_official_match = False
+            self.was_in_match = False
             return
 
-        if re.search(r"Win panel created", line, re.I) or re.search(r'Team ".*" won the (match|round)', line, re.I):
+        # Round End (Mode 3 only: prec_mode 3 records individual rounds)
+        if self.cfg.prec_mode == 3:
+            if re.search(r"Win panel created", line, re.I) or re.search(r'Team ".*" won the round', line, re.I):
+                if self.is_recording:
+                    self.stop_recording("Round Win (Mode 3)")
+                    return
+
+        # Official Match End (Engine native teamplay_game_over: 'Team "<Red|Blue>" won the match')
+        # Crucial: In competitive TF2, matches are multi-round (5CP first to 5, KOTH first to 3/4, Stopwatch halves).
+        # A round win ('won the round') does NOT end the match! Only 'won the match' signifies game over.
+        if re.search(r'Team ".*" won the match\b', line, re.I):
             self.was_in_match = False
+            self.is_official_match = False
             if self.is_recording:
-                self.stop_recording("Round/Match Win Detected")
+                self.stop_recording("Match Finished (Game Over)")
                 return
 
         # Demos.tf, LogsTF, and Soap DM Reload (Universal Competitive Match End Indicators)
         if "[demos.tf]: Demo recording completed" in line or "[LogsTF] Uploading logs" in line or re.search(r"\[SOAP\]\s+(?:Soap DM|Plugins)\s+(?:re)?loaded", line, re.I):
             self.was_in_match = False
+            self.is_official_match = False
             if self.is_recording:
                 self.stop_recording("Match Ended (Logs.tf / demos.tf / Warmup Restored)")
                 return
@@ -4240,6 +4294,8 @@ class PrecEngine:
             if self.is_recording:
                 self.stop_recording("Map Change / Server Disconnect")
             self.is_tournament = False
+            self.is_official_match = False
+            self.was_in_match = False
             return
 
     def _check_midmatch_reconnect(self):
@@ -4294,7 +4350,7 @@ class PrecEngine:
 
         if is_reconnect and self.cfg.prec_mode >= 2 and not self.is_recording:
             print(f"[{APP_NAME}] ⚡ Rejoined active match on {self.current_map} ({self.current_server_ip}) — resuming recording!", flush=True)
-            self.start_recording("Mid-Match Reconnect (ETF2L Rule 2.1 Recovery)", is_resume=True)
+            self.start_recording("Mid-Match Reconnect (ETF2L Rule 2.1 Recovery)", is_resume=True, is_official=True)
 
     def run(self):
         prof_name = self.active_profile.get("name", self.cfg.prec_league.upper())
