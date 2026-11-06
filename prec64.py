@@ -3207,7 +3207,11 @@ class PrecEngine:
         self.current_blu_team = "blu"
         self.current_demo_name = ""
         self.match_start_time = 0.0
+        self.player_name = ""
         self.status_screenshot_taken = False
+        self.status_screenshot_armed = False
+        self.status_screenshot_arm_timer = None
+        self.status_screenshot_force_timer = None
         self.status_screenshot_timer = None
         self.profiles = load_league_profiles(self.cfg.prec_tf_path)
         league_id = self.cfg.prec_league.lower()
@@ -3512,14 +3516,21 @@ class PrecEngine:
             if hasattr(self, "tray") and self.tray:
                 self.tray.update_status(f"{self.active_profile.get('name', 'P-REC')} (Mode {self.cfg.prec_mode})")
 
+    def _cancel_screenshot_timers(self):
+        """Cancels all active status screenshot timers and disarms death listener."""
+        for timer_attr in ("status_screenshot_arm_timer", "status_screenshot_force_timer", "status_screenshot_timer"):
+            timer = getattr(self, timer_attr, None)
+            if timer:
+                try:
+                    timer.cancel()
+                except Exception:
+                    pass
+                setattr(self, timer_attr, None)
+        self.status_screenshot_armed = False
+
     def stop_all(self):
         print(f"\n[{APP_NAME}] Exit requested from System Tray. Shutting down...", flush=True)
-        if getattr(self, "status_screenshot_timer", None):
-            try:
-                self.status_screenshot_timer.cancel()
-            except Exception:
-                pass
-            self.status_screenshot_timer = None
+        self._cancel_screenshot_timers()
         if self.is_recording:
             try:
                 self.stop_recording("User Exit")
@@ -3535,12 +3546,7 @@ class PrecEngine:
             return
 
         print(f"\n[{APP_NAME}] Uninstallation confirmed. Stopping operations...", flush=True)
-        if getattr(self, "status_screenshot_timer", None):
-            try:
-                self.status_screenshot_timer.cancel()
-            except Exception:
-                pass
-            self.status_screenshot_timer = None
+        self._cancel_screenshot_timers()
 
         if self.is_recording:
             try:
@@ -3790,6 +3796,8 @@ class PrecEngine:
             return
 
         self.status_screenshot_taken = True
+        self.status_screenshot_armed = False
+        self._cancel_screenshot_timers()
 
         def _worker():
             try:
@@ -3810,13 +3818,13 @@ class PrecEngine:
         threading.Thread(target=_worker, daemon=True).start()
 
     def schedule_status_screenshot(self):
-        """Schedules random in-game status screenshot after 3 minutes of play (ETF2L Rule 2.1 compliance)."""
-        if self.status_screenshot_timer:
-            try:
-                self.status_screenshot_timer.cancel()
-            except Exception:
-                pass
-            self.status_screenshot_timer = None
+        """
+        Schedules in-game status screenshot with zero gameplay disruption (ETF2L Rule 2.1 compliance).
+        Arms after 2.5 minutes of play and listens for when the LOCAL player running P-REC dies,
+        snapping the status screenshot during their respawn screen.
+        If the player survives without dying after 5.5 minutes, executes a forced fallback mid-game.
+        """
+        self._cancel_screenshot_timers()
 
         should_screen = (self.cfg.prec_screens and not self.is_scrim) or (
             self.active_profile.get("mandatory_status_screenshot") and not self.is_scrim
@@ -3826,25 +3834,39 @@ class PrecEngine:
 
         now = time.time()
         elapsed = (now - self.match_start_time) if self.match_start_time else 0.0
-        if elapsed >= 180.0:
-            # Match is already 3+ minutes in (substitute or mid-game reconnect)
-            delay = random.uniform(10.0, 45.0)
+
+        ARM_THRESHOLD = 150.0   # 2 minutes 30 seconds
+        FORCE_DEADLINE = 330.0  # 5 minutes 30 seconds
+
+        if elapsed >= ARM_THRESHOLD:
+            # Match is already 2.5+ minutes in (substitute or mid-game reconnect): arm immediately!
+            self.status_screenshot_armed = True
+            force_delay = max(30.0, FORCE_DEADLINE - elapsed)
+            print(f"[{APP_NAME}] 🎯 Status screenshot ARMED (listening for local player death on respawn, forced fallback in {int(force_delay)}s)", flush=True)
         else:
-            # Fresh match: wait until 3 minutes (180s) have passed, plus a random offset (15-75s)
-            delay = (180.0 - elapsed) + random.uniform(15.0, 75.0)
+            arm_delay = ARM_THRESHOLD - elapsed
+            force_delay = FORCE_DEADLINE - elapsed
+            mins_force = int(FORCE_DEADLINE // 60)
+            secs_force = int(FORCE_DEADLINE % 60)
+            print(f"[{APP_NAME}] Status screenshot arming in {int(arm_delay)}s (will trigger on next death to avoid gameplay disruption; forced fallback at ~{mins_force}m {secs_force:02d}s)", flush=True)
 
-        total_play_time = elapsed + delay
-        mins = int(total_play_time // 60)
-        secs = int(total_play_time % 60)
-        print(f"[{APP_NAME}] In-game status screenshot scheduled in {int(delay)}s (after ~{mins}m {secs:02d}s of play)", flush=True)
+            def _arm_worker():
+                if self.is_recording and not self.status_screenshot_taken:
+                    self.status_screenshot_armed = True
+                    print(f"[{APP_NAME}] 🎯 Status screenshot ARMED — waiting for local player death to take screenshot with zero gameplay disruption!", flush=True)
 
-        def _worker():
+            self.status_screenshot_arm_timer = threading.Timer(arm_delay, _arm_worker)
+            self.status_screenshot_arm_timer.daemon = True
+            self.status_screenshot_arm_timer.start()
+
+        def _force_worker():
             if self.is_recording and not self.status_screenshot_taken:
-                self.capture_status_screenshot(f"Mid-Game: ~{mins}m {secs:02d}s")
+                print(f"[{APP_NAME}] ⏱️ Local player survived without dying for 5+ mins — executing forced status screenshot fallback.", flush=True)
+                self.capture_status_screenshot("Mid-Game Forced Timeout (Survivor Fallback)")
 
-        self.status_screenshot_timer = threading.Timer(delay, _worker)
-        self.status_screenshot_timer.daemon = True
-        self.status_screenshot_timer.start()
+        self.status_screenshot_force_timer = threading.Timer(force_delay, _force_worker)
+        self.status_screenshot_force_timer.daemon = True
+        self.status_screenshot_force_timer.start()
 
     def start_recording(self, reason="Match Live", is_resume=False, is_official=True):
         now = time.time()
@@ -3869,6 +3891,7 @@ class PrecEngine:
 
         # Query tournament team names (e.g. Froyotech, Witness Gaming, red, blu)
         self.query_tournament_teams()
+        self.query_player_name()
 
         demo_name = re.sub(r'["\r\n;\0]', '', self.format_demo_name())
         self.current_demo_name = demo_name
@@ -3934,12 +3957,7 @@ class PrecEngine:
         print(f"[{APP_NAME}] Saved:  tf/{demo_dir}/{self.current_demo_name}.dem", flush=True)
         print("=" * 65 + "\n", flush=True)
 
-        if self.status_screenshot_timer:
-            try:
-                self.status_screenshot_timer.cancel()
-            except Exception:
-                pass
-            self.status_screenshot_timer = None
+        self._cancel_screenshot_timers()
 
         # In scrim mode, skip mandatory status screenshots unless explicitly configured
         should_screen = (self.cfg.prec_screens and not self.is_scrim) or (self.active_profile.get("mandatory_status_screenshot") and not self.is_scrim)
@@ -4032,6 +4050,69 @@ class PrecEngine:
             return True
         return False
 
+    def query_player_name(self):
+        """Queries TF2 for the local player's active in-game name."""
+        if not self.sender:
+            return
+        try:
+            resp = self.send_cmd_response("name")
+            m = re.search(r'^\s*"?name"?\s*=\s*"([^"]+)"', resp, re.I | re.M)
+            if m and m.group(1).strip():
+                clean_name = m.group(1).strip()
+                if clean_name != getattr(self, "player_name", ""):
+                    self.player_name = clean_name
+                    print(f"[{APP_NAME}] 👤 Local player name identified: '{clean_name}'", flush=True)
+        except Exception:
+            pass
+
+    def is_local_player_death(self, line: str) -> bool:
+        """
+        Determines whether the console line indicates that the LOCAL player (the user running P-REC) has died.
+        Ensures status screenshots are snapped during the respawn screen with zero gameplay disruption.
+        """
+        if not line or not self.is_recording or self.status_screenshot_taken:
+            return False
+
+        # 1. Engine respawn / class prompt (exclusive to the local player in client console)
+        if re.search(r'^\*You will respawn as\b', line, re.I):
+            return True
+
+        # 2. Local player name matching
+        pname = getattr(self, "player_name", "").strip()
+        if not pname:
+            return False
+
+        # Clean tags (e.g. "[☁]Emiel #FREEJEDI" -> "Emiel")
+        clean_pname = re.sub(r'^[\[\(\{][^\]\)\}]+[\]\)\}]\s*', '', pname).strip()
+        name_tokens = [t.lower() for t in re.findall(r'[a-zA-Z0-9_\-]{3,}', pname)]
+        pname_candidates = [p.lower() for p in (pname, clean_pname) if len(p) >= 2]
+
+        def matches_player(target: str) -> bool:
+            t_low = target.lower()
+            for cand in pname_candidates:
+                if cand in t_low or (len(t_low) >= 3 and t_low in cand):
+                    return True
+            for token in name_tokens:
+                if token in t_low:
+                    return True
+            return False
+
+        # 3. Suicide or environmental fall death of the local player: "Player suicided." / "Player died."
+        m_suicide = re.search(r'^(.*?)\s+(?:suicided|died)\b', line, re.I)
+        if m_suicide:
+            victim = m_suicide.group(1).strip()
+            if matches_player(victim):
+                return True
+
+        # 4. Killed by an enemy player: "Killer killed Victim with weapon"
+        m_killed = re.search(r'\bkilled\s+(.+?)\s+with\b', line, re.I)
+        if m_killed:
+            victim = m_killed.group(1).strip()
+            if matches_player(victim):
+                return True
+
+        return False
+
     def process_console_line(self, line):
         if not line:
             return
@@ -4063,6 +4144,8 @@ class PrecEngine:
         name_match = re.search(r'["\']?([^"\'\n\r]+)["\']?\s+changed name to\s+["\']?([^"\'\n\r]+)["\']?', line, re.I)
         if name_match:
             p_old, p_new = name_match.group(1).strip(), name_match.group(2).strip()
+            if not self.player_name or p_old.lower() in self.player_name.lower() or self.player_name.lower() in p_old.lower():
+                self.player_name = p_new
             print(f"[{APP_NAME}] 🔄 Player name changed: '{p_old}' -> '{p_new}'", flush=True)
             self.send_cmd(f'echo "[P-REC External] Name updated: {p_new}"')
 
@@ -4077,6 +4160,13 @@ class PrecEngine:
         # Ignore player text chat from triggering match state changes, configs, or recording commands
         if self.is_player_chat(line):
             return
+
+        # Check if the LOCAL player running P-REC died while status screenshot is armed
+        if getattr(self, "status_screenshot_armed", False) and not self.status_screenshot_taken:
+            if self.is_local_player_death(line):
+                self.status_screenshot_armed = False
+                print(f"\n[{APP_NAME}] 💀 Local player death detected — capturing status screenshot during respawn (zero gameplay disruption)!", flush=True)
+                self.capture_status_screenshot("Local Player Dead on Respawn (Zero Gameplay Disruption)")
 
         map_match = re.search(r"(?:Map:\s+|map\s*:\s+)([a-zA-Z0-9_]+)", line, re.I)
         if map_match:
@@ -4317,6 +4407,7 @@ class PrecEngine:
 
         # 2. Query tournament team names and whitelist
         self.query_tournament_teams()
+        self.query_player_name()
         resp_wl = self.send_cmd_response("mp_tournament_whitelist")
         if not resp_wl:
             self.send_cmd("mp_tournament_whitelist")
@@ -4379,6 +4470,7 @@ class PrecEngine:
                     self.send_cmd('echo "[P-REC External] ================================================"')
                     self.send_cmd('echo ""')
                     self.apply_league_cvars()
+                    self.query_player_name()
                     connected = True
                     if hasattr(self, "tray") and self.tray:
                         self.tray.update_status(f"Connected (Netcon • {self.active_profile.get('name')})")
@@ -4403,6 +4495,7 @@ class PrecEngine:
                     self.send_cmd('echo "[P-REC External] ================================================"')
                     self.send_cmd('echo ""')
                     self.apply_league_cvars()
+                    self.query_player_name()
                     connected = True
                     if hasattr(self, "tray") and self.tray:
                         self.tray.update_status(f"Connected (RCON • {self.active_profile.get('name')})")
