@@ -120,7 +120,7 @@ When connected to a competitive server, P-REC External inspects console output f
 
 ## 🏆 League Ruleset Compliance
 
-* **ETF2L ([Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos)):** Mid-match reconnect recovery (resumes recording immediately if you crash, rejoin, or substitute mid-game) and automatic SteamID status screenshots (`status; jpeg`).
+* **ETF2L ([General Rule 2.1](https://rules.etf2l.org/docs/general-2/#21-every-player-has-to-record-demos) | [6v6 Rules](https://rules.etf2l.org/docs/6v6-2) | [9v9 Rules](https://rules.etf2l.org/docs/9v9-2)):** Continuous POV demo recording across all match rounds (5CP, KOTH, Stopwatch, Golden Cap, Halves), under-100MB file compliance (eliminates warmup bloat so demos upload cleanly to ETF2L without rejection), mid-match reconnect/crash recovery, and automated mid-game SteamID status screenshots (`status; jpeg`).
 * **AsiaFortress ([Rules](https://docs.google.com/document/d/16D6nGRbq1ZafMtR1uBOfnvC3jJ4K4lPzqbrB6lqDQ74/edit?tab=t.0#heading=h.rdjxx5582d9w)):** Detects `af_` tournament configs, applies `af` demo prefixes, and captures round status screenshots.
 * **RGL.gg ([Rule 1008.5](https://docs.rgl.gg/rules/global/1008/?h=pov+demos#1008_5-pov-and-stv-demos)):** Enforces `ds_autodelete 0`, applies `rgl` demo prefix, and triggers cleanly on `rgl_` configs.
 * **ozfortress ([POV Guide](https://docs.ozfortress.com/guides/pov_demo_recording/)):** Keeps `ds_enable 3` set to pass server-side `sm_querycvar` Demo Checker checks, then cleanly splits the match demo from the pre-game warmup via `ds_stop; ds_record` the instant countdown begins.
