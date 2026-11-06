@@ -15,33 +15,34 @@ In all competitive leagues (ETF2L, RGL, ozfortress, AsiaFortress, etc.), **it re
 
 ---
 
-### ⚡ Key Features
-* **0 FPS Impact / Zero Lag:** Runs 100% externally out-of-process. Touches 0 HUD animations and 0 VGUI panels.
-* **Zero Warmup Bloat:** Records strictly when the tournament countdown goes live.
-* **100% VAC-Safe:** Connects via official engine loopback sockets. Zero DLL injection or memory hooks.
-* **🛡️ Windows System Tray & Close-to-Tray:** Lives quietly in Hidden Pictograms with the TF2 **Supreme Soviet** icon. Crossing out ('X') the console minimizes to tray without interrupting recording. Single or double-click the tray icon to instantly toggle the console back.
-* **📸 League Compliance Screenshots:** Takes mandatory in-game status screenshot randomly after 3 minutes of active tournament play (strict ETF2L Rule 2.1 compliance) plus scoreboard screenshot at match end.
-* **🔄 Mid-Match Reconnect & Substitute Detection:** Automatically detects ongoing matches if you crash, rejoin, or substitute into a tournament server mid-game, resuming recording immediately.
-* **🖥️ Desktop Shortcut & Startup:** Option to place a Desktop shortcut and auto-start silently on login.
-* **🔍 Live Connection Diagnostics:** Click "Check Connection" in the tray at any time to verify communication.
-* **Reassuring In-Game Console Messages:** Announces connection, active league, and recording start/stop in TF2 console (`~`).
-* **Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
-* **Multi-League Rulesets:** Dedicated compliance for **ETF2L** (Rule 2.1), **AsiaFortress**, **RGL** (1008.5), **ozfortress**, **Matcha.tf**, and **CLTF2** with intuitive 3-2-1-0 recording modes.
-* **Auto-Healing RCON & serveme.tf Synergy:** Automatically synchronizes passwords and recovers instantly (<1ms) if you switch `rcon_password` in-game to execute server commands.
-* **DemoMan Integration:** Automatically discovers DemoMan's active RCON password and TF2 path.
-* **🎵 Authentic Tactile Audio Cues:** Uses classic original P-REC mechanical switch clicks directly in-game (`buttons/button9.wav` on start, `buttons/button14.wav` on stop, `buttons/bell1.wav` on bookmark) with zero annoying motherboard piezo buzzers and zero confusing player voice lines.
-* **🐛 Report Issues Buttons & Commands:** Quick 1-click access to the GitHub issues tracker via console toolbar, system tray context menu, and in-game `prec_issue` command.
-* **⚡ Ultra-Low CPU Engine:** Native Win32 Toolhelp snapshots inspect game state in < 0.5ms with zero background subprocess creation.
+### ⚡ Highlights & Key Features
+
+* **Zero Game Lag / 0 FPS Impact:** Runs 100% externally out-of-process via engine loopback sockets. Touches 0 HUD animations and 0 VGUI panels.
+* **100% VAC-Safe:** Connects via official Source engine RCON/Netcon. Zero memory injection, zero DLL hooking.
+* **Zero Warmup Bloat:** Records strictly when the live tournament countdown begins.
+* **🛡️ Windows System Tray & Close-to-Tray:** Sits quietly in Hidden Pictograms with the TF2 **Supreme Soviet** icon. Crossing out ('X') minimizes to tray without interrupting recording. Single or double-click toggles the console.
+* **🐧 Linux Native Out-of-the-Box:** Includes a standalone 64-bit Linux ELF binary (`prec64`) with sub-millisecond `/proc` detection, multi-drive `libraryfolders.vdf` discovery, PipeWire/Pulse chimes, and `notify-send` desktop notifications.
+* **📸 League Compliance Screenshots:** Automatically captures mandatory in-game status screenshots (`status; jpeg`) with player SteamIDs randomly after 3 minutes of play (ETF2L Rule 2.1 compliance) and snaps the match-end scoreboard.
+* **🔄 Mid-Match Reconnect & Substitute Detection:** Automatically detects active tournament rounds if you crash, rejoin, or substitute into a match, resuming recording immediately.
+* **⚡ Auto Profile Switching & Scrim Mode:** Auto-switches rulesets when match configs load; suppresses status screenshots and adds `_scrim` prefix during practice.
+* **🏆 Multi-League Rulesets:** Dedicated compliance for **ETF2L** (Rule 2.1), **AsiaFortress**, **RGL** (1008.5), **ozfortress**, **Matcha.tf**, and **CLTF2**.
+* **🔍 Auto-Healing RCON & DemoMan Synergy:** Automatically synchronizes passwords and recovers in <1ms if you switch `rcon_password` in-game for server commands. Automatically pairs with local [DemoMan](https://github.com/DemomanApp/DemoMan) setups.
+* **🎵 Authentic Tactile Audio Cues:** Uses classic original P-REC mechanical switch clicks in-game (`buttons/button9.wav` on start, `buttons/button14.wav` on stop, `buttons/bell1.wav` on bookmark) with zero annoying piezo buzzers and zero confusing player voice lines.
+* **🖥️ 1-Minute Setup & 1-Click Uninstaller:** Interactive setup wizard configures your active autoexec, creates optional Desktop shortcuts, and sets up silent startup.
 
 ---
 
 ### 🚀 Steam Launch Options
-Add this to the end of your Launch Options in Steam (TF2 Properties -> General):
+Add either option to your TF2 Launch Options in Steam (**Properties -> General -> Launch Options**):
 
-```text
--usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
-```
-*(If you already run [DemoMan](https://github.com/DemomanApp/DemoMan), you already have this in Steam!)*
+* **Option 1 (RCON Mode - Recommended, identical to DemoMan):**
+  ```text
+  -usercon +rcon_password YOUR_PASSWORD +ip 0.0.0.0 +hostport 27969 +net_start
+  ```
+* **Option 2 (Netcon Mode - Ultra-short):**
+  ```text
+  -netconport 2121
+  ```
 
 ---
 
@@ -50,12 +51,12 @@ Add this to the end of your Launch Options in Steam (TF2 Properties -> General):
 * **Linux (64-bit Standalone ELF Binary):** [`prec64`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.0/prec64)
 * **Configuration File:** [`PREC_Settings.cfg`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.0/PREC_Settings.cfg)
 
-📖 **Full Setup Guide & Documentation:** See [README.md](https://github.com/Emieldev/P-REC-External/blob/main/README.md).
+📖 **Full Documentation & Configuration Reference:** See [README.md](https://github.com/Emieldev/P-REC-External/blob/main/README.md).
 
 ---
 
 ### 🙏 Credits
-* **Aethelred (Orange)** for the original [P-REC](https://github.com/Orange-TF2/p-rec).
+* **Oleg Koshmeliuk (Orange)** for the legendary original [P-REC (Pov-Record)](https://github.com/olegKoshmeliuk/Pov-Record) plugin.
 * **peaches** for [PeachREC](https://github.com/peaches-tf2/PeachREC).
 * **DemoMan** developers for the [DemoMan](https://github.com/DemomanApp/DemoMan) ecosystem.
-* ETF2L, AsiaFortress, RGL.gg, ozfortress, Matcha.tf, and CLTF2.
+* ETF2L, AsiaFortress, RGL.gg, ozfortress, Matcha.tf, and CLTF2 communities.
