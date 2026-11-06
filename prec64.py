@@ -619,6 +619,24 @@ def is_tf2_running():
         except Exception:
             pass
     else:
+        # 1. High-speed direct /proc inspection (Zero subprocesses, instant, works on all distros & Steam Deck)
+        try:
+            proc_dir = Path("/proc")
+            if proc_dir.exists():
+                for entry in proc_dir.iterdir():
+                    if entry.name.isdigit():
+                        try:
+                            comm_file = entry / "comm"
+                            if comm_file.exists():
+                                comm = comm_file.read_text(encoding="utf-8", errors="ignore").strip().lower()
+                                if comm in target_names or any(comm.startswith(t) for t in ("tf_linux64", "hl2_linux", "tf")):
+                                    return True, comm, entry.name
+                        except (PermissionError, FileNotFoundError):
+                            continue
+        except Exception:
+            pass
+
+        # 2. Fallback to pgrep
         try:
             out = subprocess.check_output(["pgrep", "-a", "tf"], text=True)
             for line in out.splitlines():
@@ -782,8 +800,24 @@ def get_app_dir():
     return Path(__file__).resolve().parent
 
 
+def find_steam_library_folders(vdf_path: Path):
+    """Parses Steam libraryfolders.vdf to find all configured Steam library drives and mounts."""
+    folders = []
+    if vdf_path.exists():
+        try:
+            content = vdf_path.read_text(encoding="utf-8", errors="ignore")
+            for m in re.finditer(r'"path"\s+"([^"]+)"', content, re.IGNORECASE):
+                raw_p = m.group(1).replace("\\\\", "\\")
+                p = Path(raw_p)
+                if p.exists() and p not in folders:
+                    folders.append(p)
+        except Exception:
+            pass
+    return folders
+
+
 def detect_tf2_directory():
-    """Attempts to find the tf/ directory on Windows and Linux, checking DemoMan config first."""
+    """Attempts to find the tf/ directory across all drives and mounts on Windows and Linux, checking DemoMan config first."""
     # 0. Check if running directly inside tf/custom/ or tf/
     try:
         app_dir = get_app_dir()
@@ -804,9 +838,46 @@ def detect_tf2_directory():
     except Exception:
         pass
 
-    # 2. Standard Steam locations
+    # 2. Automatically discover all Steam library folders via libraryfolders.vdf
     home = Path.home()
+    vdf_candidates = []
+    if sys.platform == "win32":
+        for p in (
+            Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Steam/steamapps/libraryfolders.vdf",
+            Path("C:/Steam/steamapps/libraryfolders.vdf"),
+            Path("D:/Steam/steamapps/libraryfolders.vdf"),
+        ):
+            if p.exists():
+                vdf_candidates.append(p)
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
+            steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
+            winreg.CloseKey(key)
+            reg_vdf = Path(steam_path) / "steamapps/libraryfolders.vdf"
+            if reg_vdf.exists() and reg_vdf not in vdf_candidates:
+                vdf_candidates.append(reg_vdf)
+        except Exception:
+            pass
+    else:
+        for p in (
+            home / ".local/share/Steam/steamapps/libraryfolders.vdf",
+            home / ".steam/steam/steamapps/libraryfolders.vdf",
+            home / ".steam/root/steamapps/libraryfolders.vdf",
+            home / ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/libraryfolders.vdf",
+            home / ".var/app/com.valvesoftware.Steam/.steam/steam/steamapps/libraryfolders.vdf",
+            home / "snap/steam/common/.local/share/Steam/steamapps/libraryfolders.vdf",
+        ):
+            if p.exists() and p not in vdf_candidates:
+                vdf_candidates.append(p)
 
+    for vdf_file in vdf_candidates:
+        for lib in find_steam_library_folders(vdf_file):
+            tf_cand = lib / "steamapps/common/Team Fortress 2/tf"
+            if tf_cand.exists():
+                return tf_cand
+
+    # 3. Standard fallback locations
     if sys.platform == "win32":
         common_paths = [
             Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Steam/steamapps/common/Team Fortress 2/tf",
@@ -932,10 +1003,11 @@ Comment=TF2 Automated Match Recorder
 # ====================================================================
 
 _single_instance_mutex = None
+_single_instance_lock_file = None
 
 
 def acquire_single_instance_lock():
-    global _single_instance_mutex
+    global _single_instance_mutex, _single_instance_lock_file
     if sys.platform == "win32":
         try:
             import ctypes
@@ -945,6 +1017,17 @@ def acquire_single_instance_lock():
             if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
                 print(f"[{APP_NAME}] Another instance of {APP_NAME} is already running in the background/system tray. Exiting duplicate.", flush=True)
                 sys.exit(0)
+        except Exception:
+            pass
+    else:
+        try:
+            import fcntl, tempfile
+            lock_path = Path(tempfile.gettempdir()) / "prec64_single_instance.lock"
+            _single_instance_lock_file = open(lock_path, "w")
+            fcntl.flock(_single_instance_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (IOError, OSError):
+            print(f"[{APP_NAME}] Another instance of {APP_NAME} is already running in the background. Exiting duplicate.", flush=True)
+            sys.exit(0)
         except Exception:
             pass
 
@@ -1694,6 +1777,11 @@ def run_setup_wizard():
         try:
             dest_file = target_dir / current_exe.name
             shutil.copy2(current_exe, dest_file)
+            if sys.platform != "win32":
+                try:
+                    dest_file.chmod(0o755)
+                except Exception:
+                    pass
             print(f"[OK] Installed application binary to: {dest_file.resolve()}", flush=True)
         except Exception as e:
             print(f"[INFO] Using application from: {current_exe.resolve()} ({e})", flush=True)
@@ -3081,6 +3169,18 @@ class WindowsSystemTray:
                     pass
 
 
+def notify_desktop(title: str, message: str):
+    """Sends a native desktop notification across platforms (Linux notify-send / fallback)."""
+    if sys.platform != "win32":
+        try:
+            subprocess.Popen(
+                ["notify-send", "-a", APP_NAME, "-i", "media-record", title, message],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
+
+
 # ====================================================================
 # Engine Core & League Rule Enforcer
 # ====================================================================
@@ -3652,8 +3752,19 @@ class PrecEngine:
                     else:
                         try:
                             sound_name = "bell" if event == "start" else "dialog-warning"
-                            subprocess.run(["paplay", f"/usr/share/sounds/freedesktop/stereo/{sound_name}.oga"],
-                                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            oga_path = f"/usr/share/sounds/freedesktop/stereo/{sound_name}.oga"
+                            played = False
+                            if os.path.exists(oga_path):
+                                for player in ("paplay", "pw-play", "aplay"):
+                                    try:
+                                        res = subprocess.run([player, oga_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                        if res.returncode == 0:
+                                            played = True
+                                            break
+                                    except Exception:
+                                        continue
+                            if not played:
+                                print('\a', end='', flush=True)
                         except Exception:
                             pass
                 except Exception:
@@ -3799,6 +3910,7 @@ class PrecEngine:
             self.send_cmd(msg)
 
         self.play_sound("start")
+        notify_desktop(APP_NAME, f"Recording started: {self.current_demo_name}.dem")
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status(f"Recording ({self.current_demo_name})")
 
@@ -3857,6 +3969,7 @@ class PrecEngine:
             self.send_cmd(msg)
 
         self.play_sound("stop")
+        notify_desktop(APP_NAME, f"Recording stopped ({reason}): {self.current_demo_name}.dem")
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status("Connected to TF2")
 
