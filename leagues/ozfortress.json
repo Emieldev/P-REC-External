@@ -11,12 +11,13 @@
   "mandatory_status_screenshot": false,
   "server_demo_checker_bypass": true,
   "server_config_patterns": [
-    "ozfortress_(6v6|hl|ultiduo)(_scrim)?",
-    "ozf-(6s|hl|ud|scrim)",
+    "ozfortress_(6v6|hl|koth|ultiduo)(_scrim)?",
+    "ozf-(6s|hl|koth|ud|scrim)",
     "ozfortress.*(config loaded|scrim)"
   ],
   "chat_triggers": [
     "Both teams are ready",
-    "Match is LIVE"
+    "Match is LIVE",
+    "The (match|game) will begin in \\d+ seconds"
   ]
 }

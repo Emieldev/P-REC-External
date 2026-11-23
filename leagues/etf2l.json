@@ -12,7 +12,7 @@
   "ds_screens": 1,
   "mandatory_status_screenshot": true,
   "server_config_patterns": [
-    "etf2l_(6v6|9v9|golden_cap|ultiduo|bball|scrim)",
+    "etf2l_(6v6|9v9|koth|stopwatch|golden_cap|ultiduo|bball|scrim)",
     "ETF2L config",
     "config has been loaded"
   ],
@@ -20,6 +20,7 @@
     "Both teams are ready",
     "Match is LIVE",
     "All players are ready",
+    "The (match|game) will begin in \\d+ seconds",
     "\\[SOAP\\] (Soap DM|Plugins) unloaded",
     "\\[ProperPregame\\] Class limits restored"
   ]

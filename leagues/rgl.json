@@ -10,12 +10,13 @@
   "ds_screens": 1,
   "mandatory_status_screenshot": false,
   "server_config_patterns": [
-    "rgl_(6s|hl|7s|pt|cast)(_scrim)?",
-    "RGL (6s|HL|7s|Prolander).*(Config Executed|scrim)"
+    "rgl_(6s|hl|7s|pt|cast|koth)(_scrim)?",
+    "RGL (6s|HL|7s|Prolander|KOTH).*(Config Executed|scrim)"
   ],
   "chat_triggers": [
     "Both teams are ready",
     "Match is LIVE",
+    "The (match|game) will begin in \\d+ seconds",
     "First to \\d+ wins the match"
   ]
 }

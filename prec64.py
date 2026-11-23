@@ -608,7 +608,10 @@ def is_tf2_running():
 
         # Fallback to tasklist if ctypes snapshot fails
         try:
-            out = subprocess.check_output(["tasklist", "/NH", "/FO", "CSV"], text=True, errors="ignore")
+            kwargs = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+            out = subprocess.check_output(["tasklist", "/NH", "/FO", "CSV"], text=True, errors="ignore", **kwargs)
             for line in out.splitlines():
                 if line.strip():
                     parts = line.split(",")
@@ -714,11 +717,21 @@ def detect_demoman_config():
     }
 
 
+_cached_proc_passwords = []
+_last_proc_scan_pid = None
+
+
 def detect_process_rcon_passwords():
     """
     Extracts any active +rcon_password parameters from running TF2 processes.
     Supports Windows (Win32_Process) and Linux (/proc/<pid>/cmdline).
+    Results are cached per TF2 PID so external processes are never invoked repeatedly.
     """
+    global _cached_proc_passwords, _last_proc_scan_pid
+    tf_running, _, pid = is_tf2_running()
+    if tf_running and pid and pid == _last_proc_scan_pid and _cached_proc_passwords:
+        return list(_cached_proc_passwords)
+
     passwords = []
     if sys.platform == "win32":
         try:
@@ -726,7 +739,14 @@ def detect_process_rcon_passwords():
                 "powershell", "-NoProfile", "-NonInteractive", "-Command",
                 "Get-CimInstance Win32_Process -Filter \"name like 'tf%.exe' or name like 'hl2%.exe'\" | Select-Object -ExpandProperty CommandLine"
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            kwargs = {
+                "creationflags": 0x08000000  # CREATE_NO_WINDOW (prevents flashing console window & alt-tabbing)
+            }
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = si
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=3, **kwargs)
             if res.returncode == 0 and res.stdout:
                 matches = re.findall(r'\+rcon_password\s+([^\s]+)', res.stdout)
                 for m in matches:
@@ -737,7 +757,6 @@ def detect_process_rcon_passwords():
             pass
     else:
         try:
-            tf_running, _, pid = is_tf2_running()
             if tf_running and pid:
                 p_cmd = Path(f"/proc/{pid}/cmdline")
                 if p_cmd.exists():
@@ -749,6 +768,11 @@ def detect_process_rcon_passwords():
                             passwords.append(clean)
         except Exception:
             pass
+
+    if tf_running and pid and passwords:
+        _last_proc_scan_pid = pid
+        _cached_proc_passwords = list(passwords)
+
     return passwords
 
 
@@ -2339,9 +2363,6 @@ class SourceRcon:
                 self.close()
                 if retry:
                     try:
-                        for p in detect_process_rcon_passwords():
-                            if p and p not in self.candidate_passwords:
-                                self.candidate_passwords.insert(0, p)
                         self.connect()
                         self._send_raw(self.SERVERDATA_EXECCOMMAND, cmd)
                         req_id, packet_type, body = self._read_raw()
@@ -3206,6 +3227,7 @@ class PrecEngine:
         self.current_red_team = "red"
         self.current_blu_team = "blu"
         self.current_demo_name = ""
+        self.current_demo_map = ""
         self.match_start_time = 0.0
         self.player_name = ""
         self.status_screenshot_taken = False
@@ -3868,15 +3890,24 @@ class PrecEngine:
         self.status_screenshot_force_timer.daemon = True
         self.status_screenshot_force_timer.start()
 
+    def _async_refresh_metadata(self):
+        """Asynchronously queries tournament team names and player name in the background."""
+        try:
+            self.query_tournament_teams()
+            self.query_player_name()
+        except Exception:
+            pass
+
     def start_recording(self, reason="Match Live", is_resume=False, is_official=True):
         now = time.time()
-        if self.is_recording or (now - self.last_record_start < 1.5):
+        if self.is_recording or (now - self.last_record_start < 1.0):
             return
 
         self.last_record_start = now
         self.is_recording = True
         self.is_official_match = is_official
         self.was_in_match = True
+        self.current_demo_map = self.current_map
         if not self.match_start_time:
             self.match_start_time = now
         self.status_screenshot_taken = False
@@ -3889,9 +3920,8 @@ class PrecEngine:
 
         sub_type = "Scrim Practice" if self.is_scrim else "Official Match"
 
-        # Query tournament team names (e.g. Froyotech, Witness Gaming, red, blu)
-        self.query_tournament_teams()
-        self.query_player_name()
+        # Refresh tournament teams and player name in the background without blocking record start
+        threading.Thread(target=self._async_refresh_metadata, daemon=True).start()
 
         demo_name = re.sub(r'["\r\n;\0]', '', self.format_demo_name())
         self.current_demo_name = demo_name
@@ -3908,46 +3938,49 @@ class PrecEngine:
         print(f"[{APP_NAME}] Target: tf/{demo_rel_path}.dem", flush=True)
         print("=" * 65 + "\n", flush=True)
 
-        # Set ds_prefix for demo support compliance
-        self.send_cmd(f'ds_prefix "{demo_name}_"')
-
-        # Record demo with exact name using Source Engine record command
+        # Immediate zero-lag record trigger: combine ds_prefix and record in one command
         if self.active_profile.get("server_demo_checker_bypass"):
-            self.send_cmd(f'stop; ds_stop; record "{demo_rel_path}"')
+            self.send_cmd(f'stop; ds_stop; ds_prefix "{demo_name}_"; record "{demo_rel_path}"')
         else:
-            self.send_cmd(f'record "{demo_rel_path}"')
+            self.send_cmd(f'ds_prefix "{demo_name}_"; record "{demo_rel_path}"')
 
-        # 2. In-Game Developer Console (~) Prominent Notification Banner
-        self.send_cmd('echo ""')
-        self.send_cmd('echo "[P-REC External] ================================================"')
-        self.send_cmd(f'echo "[P-REC External] >>> {action_title} <<<"')
-        self.send_cmd(f'echo "[P-REC External] Mode:   {sub_type} ({reason})"')
-        self.send_cmd(f'echo "[P-REC External] Target: tf/{demo_rel_path}.dem"')
-        self.send_cmd('echo "[P-REC External] ================================================"')
-        self.send_cmd('echo ""')
+        # 2. In-Game Developer Console (~) Banner and Chat Notifications (Asynchronous to guarantee zero frame stutter)
+        def _post_record_notifications():
+            time.sleep(0.04)
+            banner = (
+                f'echo ""; '
+                f'echo "[P-REC External] ================================================"; '
+                f'echo "[P-REC External] >>> {action_title} <<<"; '
+                f'echo "[P-REC External] Mode:   {sub_type} ({reason})"; '
+                f'echo "[P-REC External] Target: tf/{demo_rel_path}.dem"; '
+                f'echo "[P-REC External] ================================================"; '
+                f'echo ""'
+            )
+            self.send_cmd(banner)
+            if self.cfg.prec_notify >= 1 and self.cfg.pr_message_start:
+                msg = self.cfg.pr_message_start
+                if "RESUMED" in action_title and "[P-REC]" in msg:
+                    msg = msg.replace("Recording started.", "Recording resumed / continued.")
+                elif self.is_scrim and "[P-REC]" in msg:
+                    msg = msg.replace("[P-REC]", "[P-REC Scrim]")
+                self.send_cmd(msg)
+            self.play_sound("start")
 
-        # 3. In-Game Team Chat (Only if prec_notify >= 1)
-        if self.cfg.prec_notify >= 1 and self.cfg.pr_message_start:
-            msg = self.cfg.pr_message_start
-            if "RESUMED" in action_title and "[P-REC]" in msg:
-                msg = msg.replace("Recording started.", "Recording resumed / continued.")
-            elif self.is_scrim and "[P-REC]" in msg:
-                msg = msg.replace("[P-REC]", "[P-REC Scrim]")
-            self.send_cmd(msg)
+        threading.Thread(target=_post_record_notifications, daemon=True).start()
 
-        self.play_sound("start")
         notify_desktop(APP_NAME, f"Recording started: {self.current_demo_name}.dem")
         if hasattr(self, "tray") and self.tray:
             self.tray.update_status(f"Recording ({self.current_demo_name})")
 
     def stop_recording(self, reason="Match Finished"):
         now = time.time()
-        if not self.is_recording or (now - self.last_record_stop < 1.5):
+        if not self.is_recording or (now - self.last_record_stop < 1.0):
             return
 
         self.last_record_stop = now
         self.is_recording = False
         self.is_official_match = False
+        self.current_demo_map = ""
         demo_dir = (self.cfg.prec_dir or "demos").strip("/\\")
 
         # 1. P-REC Console Notification
@@ -3964,35 +3997,42 @@ class PrecEngine:
         if should_screen:
             if not self.status_screenshot_taken:
                 self.capture_status_screenshot("Match End Fallback")
-                time.sleep(0.7)
+                time.sleep(0.5)
             elif self.cfg.prec_screens >= 1:
                 print(f"[{APP_NAME}] Capturing match end scoreboard screenshot...", flush=True)
                 self.send_cmd("jpeg")
-                time.sleep(0.4)
+                time.sleep(0.3)
 
         self.match_start_time = 0.0
 
+        # Send stop command immediately
         self.send_cmd("stop; ds_stop")
 
-        # 2. In-Game Developer Console (~) Prominent Notification Banner
-        self.send_cmd('echo ""')
-        self.send_cmd('echo "[P-REC External] ================================================"')
-        self.send_cmd(f'echo "[P-REC External] >>> RECORDING STOPPED <<<"')
-        self.send_cmd(f'echo "[P-REC External] Reason: {reason}"')
-        self.send_cmd(f'echo "[P-REC External] Saved:  tf/{demo_dir}/{self.current_demo_name}.dem"')
-        self.send_cmd('echo "[P-REC External] ================================================"')
-        self.send_cmd('echo ""')
+        def _post_stop_notifications():
+            time.sleep(0.04)
+            # In-Game Developer Console (~) Prominent Notification Banner
+            banner = (
+                f'echo ""; '
+                f'echo "[P-REC External] ================================================"; '
+                f'echo "[P-REC External] >>> RECORDING STOPPED <<<"; '
+                f'echo "[P-REC External] Reason: {reason}"; '
+                f'echo "[P-REC External] Saved:  tf/{demo_dir}/{self.current_demo_name}.dem"; '
+                f'echo "[P-REC External] ================================================"; '
+                f'echo ""'
+            )
+            self.send_cmd(banner)
+            if self.cfg.prec_notify >= 1 and self.cfg.pr_message_stop:
+                msg = self.cfg.pr_message_stop
+                if self.is_scrim and "[P-REC]" in msg:
+                    msg = msg.replace("[P-REC]", "[P-REC Scrim]")
+                self.send_cmd(msg)
+            self.play_sound("stop")
 
-        # 3. In-Game Team Chat (Only if prec_notify >= 1)
-        if self.cfg.prec_notify >= 1 and self.cfg.pr_message_stop:
-            msg = self.cfg.pr_message_stop
-            if self.is_scrim and "[P-REC]" in msg:
-                msg = msg.replace("[P-REC]", "[P-REC Scrim]")
-            self.send_cmd(msg)
+        threading.Thread(target=_post_stop_notifications, daemon=True).start()
 
-        self.play_sound("stop")
         notify_desktop(APP_NAME, f"Recording stopped ({reason}): {self.current_demo_name}.dem")
         if hasattr(self, "tray") and self.tray:
+            self.tray.update_status(f"{self.active_profile.get('name', 'P-REC')} (Mode {self.cfg.prec_mode})")
             self.tray.update_status("Connected to TF2")
 
     def send_cmd_response(self, cmd: str) -> str:
@@ -4018,14 +4058,17 @@ class PrecEngine:
 
     def _restart_recording_for_match(self, reason):
         """Asynchronously transitions from warmup demo to official match demo without interrupting active matches."""
-        # If an official match demo is already actively recording, do not interrupt or split the recording!
+        # If an official match demo is already actively recording on the current map, do not interrupt!
         if self.is_recording and self.is_official_match:
-            return
+            if self.current_demo_map and self.current_map and self.current_demo_map != self.current_map:
+                pass
+            else:
+                return
 
         def _worker():
             if self.is_recording:
                 self.stop_recording("Warmup Ended / Match Live")
-                time.sleep(0.12)
+                time.sleep(0.08)
             self.start_recording(reason, is_official=True)
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -4174,11 +4217,49 @@ class PrecEngine:
             if new_map != self.current_map:
                 old_map = self.current_map
                 self.current_map = new_map
+                if self.is_recording:
+                    self.stop_recording(f"Map Changed ({old_map or 'None'} -> {new_map})")
+                self.is_recording = False
+                self.is_official_match = False
+                self.was_in_match = False
+                self.is_in_warmup = True
+                self.current_demo_map = ""
+                self.match_start_time = 0.0
+                self._cancel_screenshot_timers()
+                self.status_screenshot_taken = False
+                self.status_screenshot_armed = False
                 prefix = self.get_demo_prefix()
                 if prefix:
                     self.send_cmd(f'ds_prefix "{prefix}"')
                 print(f"[{APP_NAME}] 🔄 Map changed: '{old_map or 'None'}' -> '{new_map}' (Demo Prefix: {prefix})", flush=True)
                 self.send_cmd(f'echo "[P-REC External] Map updated: {new_map}"')
+
+        # Server Changing Map indicator (TF2 dedicated server changelevel)
+        if re.search(r"\bServer changing map\b", line, re.I):
+            if self.is_recording:
+                self.stop_recording("Server Changing Map")
+            self.is_recording = False
+            self.is_official_match = False
+            self.was_in_match = False
+            self.is_in_warmup = True
+            self.current_demo_map = ""
+            self.match_start_time = 0.0
+            self._cancel_screenshot_timers()
+            self.status_screenshot_taken = False
+            self.status_screenshot_armed = False
+            return
+
+        # Engine Demo Completed / Stopped indicator (Source engine writes this on demo end)
+        if re.search(r"(?:Completed|Stopped)\s+demo\b", line, re.I):
+            if self.is_recording:
+                self.stop_recording("Demo Completed by Engine")
+            self.is_recording = False
+            self.is_official_match = False
+            self.was_in_match = False
+            self.current_demo_map = ""
+            self.match_start_time = 0.0
+            self._cancel_screenshot_timers()
+            return
 
         red_match = re.search(r'mp_tournament_redteamname(?: changed to)?\s+"?([^"\n\r]+)"?', line, re.I)
         if red_match:
@@ -4204,7 +4285,17 @@ class PrecEngine:
 
         conn_match = re.search(r"Connecting to\s+([a-zA-Z0-9_\-\.\:]+)", line)
         if conn_match:
-            self.current_server_ip = conn_match.group(1)
+            new_ip = conn_match.group(1)
+            if self.current_server_ip and new_ip != self.current_server_ip and self.is_recording:
+                self.stop_recording(f"Connecting to New Server ({new_ip})")
+                self.is_recording = False
+                self.is_official_match = False
+                self.was_in_match = False
+                self.is_in_warmup = True
+                self.current_demo_map = ""
+                self.match_start_time = 0.0
+                self._cancel_screenshot_timers()
+            self.current_server_ip = new_ip
             self.apply_league_cvars()
 
         if re.search(r"mp_tournament['\"]\s*(?:changed to\s+|=)?\s*['\"]?1", line, re.I):
@@ -4277,13 +4368,14 @@ class PrecEngine:
                     self._restart_recording_for_match(f"{self.active_profile.get('name', 'League')} Trigger: {trigger}")
                 return
 
-        # 3. General Tournament Live Events
-        if re.search(r"The match will begin in \d+ seconds", line, re.I):
+        # 3. General Tournament Live Events & Countdown
+        if re.search(r"(?:The\s+)?(?:match|game|round)\s+(?:will\s+begin|begins)\s+in\s+\d+\s+seconds", line, re.I) or \
+           re.search(r"\b(?:Both|All)\s+(?:teams|players)\s+are\s+ready\b", line, re.I):
             self.is_tournament = True
             self.is_in_warmup = False
             if not self.is_recording:
                 self.start_recording("Tournament Countdown Started", is_official=True)
-            elif not self.is_official_match:
+            elif not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
                 self._restart_recording_for_match("Tournament Countdown Started")
             return
 
@@ -4301,7 +4393,7 @@ class PrecEngine:
             self.is_in_warmup = False
             if not self.is_recording:
                 self.start_recording("Soap DM Unloaded / ProperPregame (Match Live)", is_official=True)
-            elif not self.is_official_match:
+            elif not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
                 self._restart_recording_for_match("Soap DM Unloaded (Official Match Live)")
             return
 
@@ -4322,7 +4414,7 @@ class PrecEngine:
             self.is_in_warmup = False
             if not self.is_recording:
                 self.start_recording("SOAP DM Match Live", is_official=True)
-            elif not self.is_official_match:
+            elif not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
                 self._restart_recording_for_match("SOAP DM Match Live")
             return
 
@@ -4331,14 +4423,29 @@ class PrecEngine:
             self.is_in_warmup = False
             if not self.is_recording:
                 self.start_recording("Competitive League Match Live", is_official=True)
-            elif not self.is_official_match:
+            elif not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
                 self._restart_recording_for_match("Competitive League Match Live")
             return
+
+        # KOTH specific live events (point unlock countdown / unpause)
+        if re.search(r"(?:The\s+)?(?:control\s+point|hill|point)\s+will\s+unlock\s+in\s+\d+\s+seconds", line, re.I) or \
+           re.search(r"\b(?:Control\s+point|Hill|Point)\s+unlocked\b", line, re.I) or \
+           re.search(r"(?:6v6|9v9|HL|Highlander|ETF2L|RGL)?\s*KOTH config (?:has been )?(?:loaded|executed)", line, re.I):
+            self.is_tournament = True
+            if "config" in line.lower():
+                self.is_in_warmup = True
+            else:
+                self.is_in_warmup = False
+                if not self.is_recording and self.cfg.prec_mode >= 2:
+                    self.start_recording("KOTH Point Unlock (Match Live)", is_official=True)
+                elif not self.is_official_match and self.is_recording:
+                    self._restart_recording_for_match("KOTH Point Unlock (Match Live)")
 
         if 'World triggered "Round_Start"' in line:
             if self.cfg.prec_mode == 3 and not self.is_recording:
                 self.start_recording("Round Start (Mode 3)", is_official=False)
-            elif not self.is_in_warmup and self.cfg.prec_mode >= 2 and not self.is_recording and (self.was_in_match or self.is_tournament):
+            elif self.cfg.prec_mode >= 2 and not self.is_recording and (self.was_in_match or self.is_tournament or bool(self.active_profile.get("id"))):
+                self.is_in_warmup = False
                 self.start_recording("Round Start (Tournament Match Active)", is_resume=self.was_in_match, is_official=True)
             return
 
@@ -4353,6 +4460,10 @@ class PrecEngine:
             self.is_tournament = False
             self.is_official_match = False
             self.was_in_match = False
+            self.is_in_warmup = True
+            self.current_demo_map = ""
+            self.match_start_time = 0.0
+            self._cancel_screenshot_timers()
             return
 
         # Round End (Mode 3 only: prec_mode 3 records individual rounds)
@@ -4386,6 +4497,12 @@ class PrecEngine:
             self.is_tournament = False
             self.is_official_match = False
             self.was_in_match = False
+            self.is_in_warmup = True
+            self.current_demo_map = ""
+            self.match_start_time = 0.0
+            self._cancel_screenshot_timers()
+            self.status_screenshot_taken = False
+            self.status_screenshot_armed = False
             return
 
     def _check_midmatch_reconnect(self):
