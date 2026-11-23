@@ -4056,13 +4056,12 @@ class PrecEngine:
         except Exception as e:
             print(f"[{APP_NAME} ERROR] Failed to send command '{cmd}': {e}", flush=True)
 
-    def _restart_recording_for_match(self, reason):
+    def _restart_recording_for_match(self, reason, force=False):
         """Asynchronously transitions from warmup demo to official match demo without interrupting active matches."""
-        # If an official match demo is already actively recording on the current map, do not interrupt!
-        if self.is_recording and self.is_official_match:
-            if self.current_demo_map and self.current_map and self.current_demo_map != self.current_map:
-                pass
-            else:
+        now = time.time()
+        # If an official match demo was already started for THIS countdown within the last 8 seconds, keep it!
+        if self.is_recording and self.is_official_match and not force:
+            if (now - self.last_record_start < 8.0) and (not self.current_demo_map or self.current_demo_map == self.current_map):
                 return
 
         def _worker():
@@ -4373,10 +4372,11 @@ class PrecEngine:
            re.search(r"\b(?:Both|All)\s+(?:teams|players)\s+are\s+ready\b", line, re.I):
             self.is_tournament = True
             self.is_in_warmup = False
+            now = time.time()
             if not self.is_recording:
                 self.start_recording("Tournament Countdown Started", is_official=True)
-            elif not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
-                self._restart_recording_for_match("Tournament Countdown Started")
+            elif (now - self.last_record_start > 8.0) or not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
+                self._restart_recording_for_match("Tournament Countdown Started", force=True)
             return
 
         if re.search(r"Tournament mode restarted", line, re.I) or "mp_tournament_restart" in line:
@@ -4421,10 +4421,11 @@ class PrecEngine:
         if re.search(r"(?:^|\*\*\*\s*)Match is LIVE", line, re.I) or re.search(r"\bBoth teams are ready\b", line, re.I) or re.search(r"\bAll players are ready\b", line, re.I):
             self.is_tournament = True
             self.is_in_warmup = False
+            now = time.time()
             if not self.is_recording:
                 self.start_recording("Competitive League Match Live", is_official=True)
-            elif not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
-                self._restart_recording_for_match("Competitive League Match Live")
+            elif (now - self.last_record_start > 8.0) or not self.is_official_match or (self.current_demo_map and self.current_map and self.current_demo_map != self.current_map):
+                self._restart_recording_for_match("Competitive League Match Live", force=True)
             return
 
         # KOTH specific live events (point unlock countdown / unpause)
