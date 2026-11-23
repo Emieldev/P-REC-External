@@ -70,7 +70,7 @@ if sys.platform == "win32":
     from ctypes import wintypes
 
 APP_NAME = "P-REC External"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 APP_FULL_TITLE = f"P-REC External v{APP_VERSION}"
 GITHUB_REPO = "Emieldev/P-REC-External"
 DEFAULT_CONFIG_FILES = ["PREC_Settings.cfg"]
