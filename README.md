@@ -1,7 +1,7 @@
-# P-REC External (v1.0.0)
+# P-REC External (v1.0.1)
 ### Zero-Lag, Zero-Warmup Automated Match Recorder for Team Fortress 2 (64-Bit Native)
 
-[![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-blue.svg)](https://github.com/Emieldev/P-REC-External/releases)
+[![Version: 1.0.1](https://img.shields.io/badge/Version-1.0.1-blue.svg)](https://github.com/Emieldev/P-REC-External/releases)
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-blue.svg)](https://github.com/Emieldev/P-REC-External)
 [![TF2 Architecture: 64-bit Native](https://img.shields.io/badge/TF2-64--bit%20Native-orange.svg)](https://github.com/Emieldev/P-REC-External)
 [![Ruleset: ETF2L / AsiaFortress / RGL / ozfortress / Matcha / CLTF2](https://img.shields.io/badge/Ruleset-ETF2L%20%7C%20AsiaFortress%20%7C%20RGL%20%7C%20ozfortress%20%7C%20Matcha%20%7C%20CLTF2-green.svg)](https://github.com/Emieldev/P-REC-External)
@@ -67,8 +67,8 @@ Add EITHER of these options to your TF2 Launch Options in Steam (**Right-click T
 
 | Platform | Download | Quick Start |
 | :--- | :--- | :--- |
-| **Windows** | [`prec64.exe`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.0/prec64.exe) | Run `prec64.exe` (it silently hides to tray) or run `prec64.exe --install` for the wizard. |
-| **Linux** | [`prec64`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.0/prec64) | `chmod +x prec64 && ./prec64` (requires 0 external dependencies!). |
+| **Windows** | [`prec64.exe`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.1/prec64.exe) | Run `prec64.exe` (it silently hides to tray) or run `prec64.exe --install` for the wizard. |
+| **Linux** | [`prec64`](https://github.com/Emieldev/P-REC-External/releases/download/v1.0.1/prec64) | `chmod +x prec64 && ./prec64` (requires 0 external dependencies!). |
 
 ---
 
@@ -176,7 +176,7 @@ Located in `tf/custom/P-REC/cfg/PREC_Settings.cfg` (or `tf/cfg/`):
 
 | Convar / Setting | Default | Description |
 | :--- | :--- | :--- |
-| `prec_version` | `"1.0.0"` | Configuration version. |
+| `prec_version` | `"1.0.1"` | Configuration version. |
 | `prec_league` | `"etf2l"` | Default league profile (`etf2l`, `asiafortress`, `rgl`, `ozfortress`, `matcha`, `cltf2`, `custom`). Automatically switches when match configs execute. |
 | `prec_mode` | `2` | `3` = Record ALL matches (every map/round), `2` = Record tournament matches only (Default), `1` = Manual recording (`prec_record`), `0` = Disabled. |
 | `prec_dir` | `"demos"` | Folder inside `/tf/` where demo files are saved. |

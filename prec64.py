@@ -3690,41 +3690,36 @@ class PrecEngine:
         mode_label = "SCRIM (Practice)" if self.is_scrim else "OFFICIAL MATCH"
         print(f"[{APP_NAME}] Applying cvars for: {prof_name} [{mode_label}]", flush=True)
 
-        # Immunize localhost and clear any transient bans
-        self.send_cmd('sv_rcon_whitelist_address "127.0.0.1"')
-        self.send_cmd("removeip 127.0.0.1")
-        self.send_cmd('con_logfile "console.log"')
-
-        self.send_cmd(f'ds_dir "{self.cfg.prec_dir}"')
-        self.send_cmd(f"ds_notify {self.cfg.prec_notify}")
-        self.send_cmd(f"ds_sound {self.cfg.prec_sound}")
-
-        # In scrim mode, skip mandatory status screenshots to avoid cluttering screenshot folder
-        if self.is_scrim:
-            self.send_cmd("ds_screens 0")
-        else:
-            screens_val = 1 if (self.cfg.prec_screens or self.active_profile.get("mandatory_status_screenshot")) else 0
-            self.send_cmd(f"ds_screens {screens_val}")
-
-        self.send_cmd(f"ds_autodelete {self.active_profile.get('ds_autodelete', 0)}")
-        self.send_cmd(f"ds_min_streak {self.cfg.prec_min_streak}")
-        self.send_cmd(f"ds_kill_delay {self.cfg.prec_kill_delay}")
-        self.send_cmd(f"ds_log {self.cfg.prec_log}")
-
-        # Prefix logic: default <mapname>_<date>_<time>
-        prefix = self.get_demo_prefix()
-        if prefix:
-            self.send_cmd(f'ds_prefix "{prefix}"')
-
+        screens_val = 0 if self.is_scrim else (1 if (self.cfg.prec_screens or self.active_profile.get("mandatory_status_screenshot")) else 0)
         ds_mode = self.active_profile.get("ds_enable", 0)
-        self.send_cmd(f"ds_enable {ds_mode}")
+        prefix = self.get_demo_prefix() or ""
+
+        # Batch all cvar commands into a single atomic RCON transmission (0 lag, 1 packet)
+        commands = [
+            'sv_rcon_whitelist_address "127.0.0.1"',
+            'removeip 127.0.0.1',
+            'con_logfile "console.log"',
+            f'ds_dir "{self.cfg.prec_dir}"',
+            f'ds_notify {self.cfg.prec_notify}',
+            f'ds_sound {self.cfg.prec_sound}',
+            f'ds_screens {screens_val}',
+            f"ds_autodelete {self.active_profile.get('ds_autodelete', 0)}",
+            f'ds_min_streak {self.cfg.prec_min_streak}',
+            f'ds_kill_delay {self.cfg.prec_kill_delay}',
+            f'ds_log {self.cfg.prec_log}',
+            f'ds_enable {ds_mode}'
+        ]
+        if prefix:
+            commands.append(f'ds_prefix "{prefix}"')
+        commands.append(f'echo "[P-REC External] League profile active: {prof_name} [{mode_label}]"')
+        commands.append(f'echo "[P-REC External] Target demo directory: tf/{self.cfg.prec_dir}/ | Prefix: {prefix}"')
+
+        self.send_cmd("; ".join(commands))
+
         if self.active_profile.get("server_demo_checker_bypass"):
             print(f"        [{prof_name}] Set ds_enable {ds_mode} & ds_autodelete 0 for Server Demo Checker compliance.", flush=True)
         else:
             print(f"        [{prof_name}] Set ds_enable {ds_mode} (manual mode: auto-triggered on match live).", flush=True)
-
-        self.send_cmd(f'echo "[P-REC External] League profile active: {prof_name} [{mode_label}]"')
-        self.send_cmd(f'echo "[P-REC External] Target demo directory: tf/{self.cfg.prec_dir}/ | Prefix: {prefix}"')
 
     def play_sound(self, event="start", is_start=None, **kwargs):
         """
@@ -4210,7 +4205,7 @@ class PrecEngine:
                 print(f"\n[{APP_NAME}] 💀 Local player death detected — capturing status screenshot during respawn (zero gameplay disruption)!", flush=True)
                 self.capture_status_screenshot("Local Player Dead on Respawn (Zero Gameplay Disruption)")
 
-        map_match = re.search(r"(?:Map:\s+|map\s*:\s+)([a-zA-Z0-9_]+)", line, re.I)
+        map_match = re.search(r"(?:Map:\s+|map\s*:\s+|Current map:\s*)([a-zA-Z0-9_]+)", line, re.I)
         if map_match:
             new_map = map_match.group(1)
             if new_map != self.current_map:
@@ -4580,13 +4575,16 @@ class PrecEngine:
                     self.sender = netcon
                     self.client_mode = "netcon"
                     print(f"\n[CONNECTED] Netcon stream active on port {self.cfg.prec_netcon_port}!", flush=True)
-                    self.send_cmd('echo ""')
-                    self.send_cmd('echo "[P-REC External] ================================================"')
-                    self.send_cmd(f'echo "[P-REC External] CONNECTED: {APP_FULL_TITLE} via NETCON"')
-                    self.send_cmd(f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"')
-                    self.send_cmd('echo "[P-REC External] All systems working! Match monitoring engaged."')
-                    self.send_cmd('echo "[P-REC External] ================================================"')
-                    self.send_cmd('echo ""')
+                    banner = (
+                        'echo ""; '
+                        'echo "[P-REC External] ================================================"; '
+                        f'echo "[P-REC External] CONNECTED: {APP_FULL_TITLE} via NETCON"; '
+                        f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"; '
+                        'echo "[P-REC External] All systems working! Match monitoring engaged."; '
+                        'echo "[P-REC External] ================================================"; '
+                        'echo ""'
+                    )
+                    self.send_cmd(banner)
                     self.apply_league_cvars()
                     self.query_player_name()
                     connected = True
@@ -4605,13 +4603,16 @@ class PrecEngine:
                     self.sender = rcon
                     self.client_mode = "rcon"
                     print(f"\n[CONNECTED] RCON session active on port {self.cfg.prec_rcon_port} (DemoMan bridge)!", flush=True)
-                    self.send_cmd('echo ""')
-                    self.send_cmd('echo "[P-REC External] ================================================"')
-                    self.send_cmd(f'echo "[P-REC External] CONNECTED: {APP_FULL_TITLE} via RCON"')
-                    self.send_cmd(f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"')
-                    self.send_cmd('echo "[P-REC External] All systems working! Match monitoring engaged."')
-                    self.send_cmd('echo "[P-REC External] ================================================"')
-                    self.send_cmd('echo ""')
+                    banner = (
+                        'echo ""; '
+                        'echo "[P-REC External] ================================================"; '
+                        f'echo "[P-REC External] CONNECTED: {APP_FULL_TITLE} via RCON"; '
+                        f'echo "[P-REC External] Active League: {prof_name} | Mode: {self.cfg.prec_mode}"; '
+                        'echo "[P-REC External] All systems working! Match monitoring engaged."; '
+                        'echo "[P-REC External] ================================================"; '
+                        'echo ""'
+                    )
+                    self.send_cmd(banner)
                     self.apply_league_cvars()
                     self.query_player_name()
                     connected = True
